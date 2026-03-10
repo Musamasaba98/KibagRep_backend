@@ -7,7 +7,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -40,7 +39,11 @@ model User {
   medical_rep_id       String?              @unique
   date_of_joining      DateTime             @default(now())
   updatedAt            DateTime?            @updatedAt
-  Procurement          Procurement[]
+  procurement_orders   ProcurementOrder[]
+  call_cycles          CallCycle[]
+  daily_reports        DailyReport[]
+  expense_claims       ExpenseClaim[]
+  sample_balances      SampleBalance[]
 }
 
 model SupervisorProfile {
@@ -78,7 +81,6 @@ model Profile {
   gender          Gender
   date_of_joining DateTime      @default(now())
   updatedAt       DateTime?     @updatedAt
-  Procurement     Procurement[]
 }
 
 model Supervisor {
@@ -106,59 +108,66 @@ model MedicalRep {
 }
 
 model Company {
-  id              String    @id @default(uuid())
+  id              String                @id @default(uuid())
   company_name    String
   location        String
   latitude        Float?
   longitude       Float?
   products        Product[]
   users           User[]
-  date_of_joining DateTime  @default(now())
-  updatedAt       DateTime? @updatedAt
+  doctor_tiers    DoctorCompanyTier[]
+  facility_tiers  FacilityCompanyTier[]
+  date_of_joining DateTime              @default(now())
+  updatedAt       DateTime?             @updatedAt
 }
 
 model Product {
-  id                       String               @id @default(uuid())
+  id                       String                @id @default(uuid())
   product_name             String
+  classification           ProductClassification @default(GROWTH)
   company_id               String
-  company                  Company              @relation(fields: [company_id], references: [id])
+  company                  Company               @relation(fields: [company_id], references: [id])
   stock_trackings          StockTracking[]
   team_products            TeamProduct[]
   sample_distributions     SampleDistribution[]
   updatedAt                DateTime?            @updatedAt
-  doctor_activity          DoctorActivity?      @relation("focussedProduct")
-  doctor_activity_id       String?
-  general_product_activity DoctorActivity[]     @relation("productsDetailed")
-  PharmacyActivity         PharmacyActivity?    @relation(fields: [pharmacyActivityId], references: [id])
-  pharmacyActivityId       String?
-  Procurement              Procurement?         @relation(fields: [procurementId], references: [id])
-  procurementId            String?
+  doctor_activities_focused DoctorActivity[]     @relation("focussedProduct")
+  general_product_activity  DoctorActivity[]     @relation("productsDetailed")
+  sample_balances          SampleBalance[]
+  pharmacy_activities      PharmacyActivity[]
+  procurement_items        ProcurementItem[]
 }
 
 model Doctor {
   id                   String               @id @default(uuid())
   doctor_name          String
   speciality           String[]
+  cadre                HcpCadre             @default(Doctor)
   facility             Facility[]
   location             String
   town                 String
   contact              String?
+  gps_lat              Float?
+  gps_lng              Float?
   sample_distributions SampleDistribution[]
   profile              Profile?
+  company_tiers        DoctorCompanyTier[]
   date_of_joining      DateTime             @default(now())
   updatedAt            DateTime?            @updatedAt
   DoctorActivity       DoctorActivity[]
+  call_cycle_items     CallCycleItem[]
 }
 
 model Pharmacy {
-  id               String             @id @default(uuid())
-  pharmacy_name    String
-  location         String
-  description      String?
-  stock_trackings  StockTracking[]
-  updatedAt        DateTime?          @updatedAt
-  PharmacyActivity PharmacyActivity[]
-  Procurement      Procurement[]
+  id                   String               @id @default(uuid())
+  pharmacy_name        String
+  location             String
+  description          String?
+  stock_trackings      StockTracking[]
+  updatedAt            DateTime?            @updatedAt
+  PharmacyActivity     PharmacyActivity[]
+  procurement_contacts ProcurementContact[]
+  procurement_orders   ProcurementOrder[]
 }
 
 model Team {
@@ -214,8 +223,13 @@ model DoctorActivity {
   date               DateTime  @default(now())
   products_detailed  Product[] @relation("productsDetailed")
   focused_product    Product   @relation("focussedProduct", fields: [focused_product_id], references: [id])
-  focused_product_id String    @unique
+  focused_product_id String
   samples_given      Int
+  gps_lat            Float?
+  gps_lng            Float?
+  gps_anomaly        Boolean   @default(false)
+  outcome            String?
+  nca_reason         String?
 }
 
 model PharmacyActivity {
@@ -232,18 +246,62 @@ model PharmacyActivity {
   stockTrackingDate        DateTime
 }
 
-model Procurement {
-  id          String    @id @default(uuid())
-  user        User      @relation(fields: [user_id], references: [id])
-  user_id     String
-  pharmacy    Pharmacy? @relation(fields: [pharmacy_id], references: [id])
-  pharmacy_id String?
-  facility    Facility? @relation(fields: [facility_id], references: [id])
-  facility_id String?
-  date        DateTime
-  products    Product[]
-  profile     Profile   @relation(fields: [profileId], references: [id])
-  profileId   String
+// The person at a pharmacy or hospital who handles orders for products.
+// A rep builds relationships with these contacts to drive procurement.
+model ProcurementContact {
+  id              String             @id @default(uuid())
+  name            String
+  title           String?            // "Procurement Officer", "Stores Manager", "Hospital Pharmacist", "Dispenser"
+  contact         String?
+  pharmacy        Pharmacy?          @relation(fields: [pharmacy_id], references: [id])
+  pharmacy_id     String?
+  facility        Facility?          @relation(fields: [facility_id], references: [id])
+  facility_id     String?
+  is_key_contact  Boolean            @default(false)
+  orders          ProcurementOrder[]
+  created_at      DateTime           @default(now())
+  updatedAt       DateTime?          @updatedAt
+}
+
+// An order placed or proposed by a rep at a pharmacy or hospital/facility.
+// Status lifecycle: PROPOSED → SUBMITTED → APPROVED → DELIVERED | CANCELLED
+model ProcurementOrder {
+  id                String             @id @default(uuid())
+  user              User               @relation(fields: [user_id], references: [id])
+  user_id           String
+  contact           ProcurementContact? @relation(fields: [contact_id], references: [id])
+  contact_id        String?
+  pharmacy          Pharmacy?          @relation(fields: [pharmacy_id], references: [id])
+  pharmacy_id       String?
+  facility          Facility?          @relation(fields: [facility_id], references: [id])
+  facility_id       String?
+  order_date        DateTime           @default(now())
+  expected_delivery DateTime?
+  status            OrderStatus        @default(PROPOSED)
+  total_value       Float              @default(0)
+  notes             String?
+  items             ProcurementItem[]
+  created_at        DateTime           @default(now())
+  updatedAt         DateTime?          @updatedAt
+}
+
+model ProcurementItem {
+  id         String           @id @default(uuid())
+  order      ProcurementOrder @relation(fields: [order_id], references: [id])
+  order_id   String
+  product    Product          @relation(fields: [product_id], references: [id])
+  product_id String
+  quantity   Int
+  unit_price Float?
+  notes      String?
+}
+
+enum OrderStatus {
+  PROPOSED
+  SUBMITTED
+  APPROVED
+  DELIVERED
+  CANCELLED
 }
 
 model DailyPlan {
@@ -267,17 +325,96 @@ model MonthlyPlan {
 }
 
 model Facility {
-  id          String        @id @default(uuid())
-  name        String
-  location    String
-  description String?
-  latitude    Float?
-  longitude   Float?
-  doctor_id   String?
-  doctor      Doctor?       @relation(fields: [doctor_id], references: [id])
-  users       User[]
-  updatedAt   DateTime?     @updatedAt
-  Procurement Procurement[]
+  id                   String               @id @default(uuid())
+  name                 String
+  location             String
+  description          String?
+  latitude             Float?
+  longitude            Float?
+  doctor_id            String?
+  doctor               Doctor?              @relation(fields: [doctor_id], references: [id])
+  users                User[]
+  updatedAt            DateTime?            @updatedAt
+  procurement_contacts ProcurementContact[]
+  procurement_orders   ProcurementOrder[]
+  company_tiers        FacilityCompanyTier[]
+}
+
+model CallCycle {
+  id          String          @id @default(uuid())
+  user        User            @relation(fields: [user_id], references: [id])
+  user_id     String
+  month       Int
+  year        Int
+  status      CycleStatus     @default(DRAFT)
+  approved_by String?
+  approved_at DateTime?
+  locked_at   DateTime?
+  items       CallCycleItem[]
+  created_at  DateTime        @default(now())
+  updated_at  DateTime?       @updatedAt
+
+  @@unique([user_id, month, year])
+}
+
+model CallCycleItem {
+  id          String     @id @default(uuid())
+  cycle       CallCycle  @relation(fields: [cycle_id], references: [id])
+  cycle_id    String
+  doctor      Doctor     @relation(fields: [doctor_id], references: [id])
+  doctor_id   String
+  tier        DoctorTier @default(B)
+  frequency   Int
+  visits_done Int        @default(0)
+
+  @@unique([cycle_id, doctor_id])
+}
+
+enum CycleStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  LOCKED
+}
+
+enum DoctorTier {
+  A
+  B
+  C
+}
+
+// Each pharma company classifies doctors by their own business priorities.
+// A = high-prescriber / opinion leader, B = regular, C = low-volume.
+// KibagRep uses the aggregate across companies for cross-company doctor analytics.
+model DoctorCompanyTier {
+  doctor_id       String
+  company_id      String
+  doctor          Doctor    @relation(fields: [doctor_id], references: [id])
+  company         Company   @relation(fields: [company_id], references: [id])
+  tier            DoctorTier
+  visit_frequency Int?      // visits/month override (defaults: A=4, B=2, C=1)
+  notes           String?   // e.g. "high antibiotic prescriber", "opinion leader"
+  classified_by   String?   // user_id who set this tier
+  classified_at   DateTime  @default(now())
+  updatedAt       DateTime? @updatedAt
+
+  @@id([doctor_id, company_id])
+}
+
+// Each pharma company classifies facilities by strategic importance.
+// A = large hospital / high patient volume, B = clinic/health center, C = dispensary.
+model FacilityCompanyTier {
+  facility_id     String
+  company_id      String
+  facility        Facility  @relation(fields: [facility_id], references: [id])
+  company         Company   @relation(fields: [company_id], references: [id])
+  tier            DoctorTier
+  notes           String?
+  classified_by   String?
+  classified_at   DateTime  @default(now())
+  updatedAt       DateTime? @updatedAt
+
+  @@id([facility_id, company_id])
 }
 
 enum UserRole {
@@ -286,10 +423,117 @@ enum UserRole {
   MedicalRep
   USER
   COUNTRY_MGR
+  SUPER_ADMIN
 }
 
 enum Gender {
   MALE
   FEMALE
+  OTHER
+}
+
+enum HcpCadre {
+  Doctor
+  Nurse
+  Midwife
+  Clinician
+  Pharmacist
+  Other
+}
+
+enum ProductClassification {
+  CASH_COW
+  NEW_LAUNCH
+  GROWTH
+  DECLINING
+}
+
+model DailyReport {
+  id           String       @id @default(uuid())
+  user         User         @relation(fields: [user_id], references: [id])
+  user_id      String
+  report_date  DateTime     @default(now())
+  summary      String?
+  visits_count Int          @default(0)
+  samples_count Int         @default(0)
+  status       ReportStatus @default(DRAFT)
+  reviewed_by  String?
+  reviewed_at  DateTime?
+  review_note  String?
+  created_at   DateTime     @default(now())
+  updated_at   DateTime?    @updatedAt
+
+  @@unique([user_id, report_date])
+}
+
+enum ReportStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  actor_id    String?
+  action      String
+  entity_type String
+  entity_id   String
+  metadata    Json?
+  created_at  DateTime @default(now())
+}
+
+model ExpenseClaim {
+  id           String        @id @default(uuid())
+  user         User          @relation(fields: [user_id], references: [id])
+  user_id      String
+  period       String
+  items        ExpenseItem[]
+  total_amount Float         @default(0)
+  status       ClaimStatus   @default(DRAFT)
+  approved_by  String?
+  approved_at  DateTime?
+  submitted_at DateTime?
+  review_note  String?
+  created_at   DateTime      @default(now())
+  updated_at   DateTime?     @updatedAt
+}
+
+model ExpenseItem {
+  id          String          @id @default(uuid())
+  claim       ExpenseClaim    @relation(fields: [claim_id], references: [id])
+  claim_id    String
+  category    ExpenseCategory
+  description String
+  amount      Float
+  date        DateTime
+  created_at  DateTime        @default(now())
+}
+
+model SampleBalance {
+  id         String   @id @default(uuid())
+  user       User     @relation(fields: [user_id], references: [id])
+  user_id    String
+  product    Product  @relation(fields: [product_id], references: [id])
+  product_id String
+  issued     Int      @default(0)
+  given      Int      @default(0)
+  updated_at DateTime @updatedAt
+
+  @@unique([user_id, product_id])
+}
+
+enum ClaimStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+enum ExpenseCategory {
+  TRANSPORT
+  ACCOMMODATION
+  MEALS
+  PROMO_ITEMS
   OTHER
 }

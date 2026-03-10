@@ -1,5 +1,6 @@
 import app from "./app.js";
-import dotenv from 'dotenv-safe'
+import dotenv from 'dotenv'
+import "./src/cron/jobs.js";
 
 
 const result =dotenv.config()
