@@ -19,6 +19,10 @@ import callCycleRouter from "./src/routes/callcycle.route.js";
 import dailyReportRouter from "./src/routes/dailyreport.route.js";
 import expenseRouter from "./src/routes/expense.route.js";
 import sampleBalanceRouter from "./src/routes/samplebalance.route.js";
+import tourPlanRouter from "./src/routes/tourplan.route.js";
+import territoryRouter from "./src/routes/territory.route.js";
+import supervisorRouter from "./src/routes/supervisor.route.js";
+import targetRouter from "./src/routes/target.route.js";
 import { notFound, errorHandler } from "./src/middleware/error.middleware.js";
 
 const app = express();
@@ -59,6 +63,15 @@ app.use("/api/expense", expenseRouter);
 
 // Sample balance
 app.use("/api/sample-balance", sampleBalanceRouter);
+
+// Tour plans (STP)
+app.use("/api/tour-plan", tourPlanRouter);
+
+// Supervisor team intelligence
+app.use("/api/supervisor", supervisorRouter);
+
+// Sales targets (set by management, visible to reps)
+app.use("/api/target", targetRouter);
 
 // Legacy report generator
 app.use("/api/report", reportRouter);

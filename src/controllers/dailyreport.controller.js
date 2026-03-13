@@ -16,8 +16,9 @@ export const getTodayReport = asyncHandler(async (req, res) => {
   const tomorrow = new Date(today);
   tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
 
-  const [visitsCount, samplesAgg] = await Promise.all([
+  const [visitsCount, pharmCount, samplesAgg] = await Promise.all([
     prisma.doctorActivity.count({ where: { user_id: userId, date: { gte: today, lt: tomorrow } } }),
+    prisma.pharmacyActivity.count({ where: { user_id: userId, date: { gte: today, lt: tomorrow } } }),
     prisma.doctorActivity.aggregate({
       where: { user_id: userId, date: { gte: today, lt: tomorrow } },
       _sum: { samples_given: true },
@@ -33,7 +34,16 @@ export const getTodayReport = asyncHandler(async (req, res) => {
       data: {
         user: { connect: { id: userId } },
         report_date: today,
-        visits_count: visitsCount,
+        visits_count: visitsCount + pharmCount,
+        samples_count: samplesAgg._sum.samples_given ?? 0,
+      },
+    });
+  } else if (report.status === 'DRAFT') {
+    // Always refresh counts while still a draft so the rep sees live totals
+    report = await prisma.dailyReport.update({
+      where: { id: report.id },
+      data: {
+        visits_count: visitsCount + pharmCount,
         samples_count: samplesAgg._sum.samples_given ?? 0,
       },
     });
@@ -45,13 +55,14 @@ export const getTodayReport = asyncHandler(async (req, res) => {
 // POST /api/daily-report/submit
 export const submitReport = asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { summary } = req.body;
+  const { summary, jfw_observer_id } = req.body;
   const today = dayStart();
   const tomorrow = new Date(today);
   tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
 
-  const [visitsCount, samplesAgg, user] = await Promise.all([
+  const [visitsCount, pharmCount, samplesAgg, user] = await Promise.all([
     prisma.doctorActivity.count({ where: { user_id: userId, date: { gte: today, lt: tomorrow } } }),
+    prisma.pharmacyActivity.count({ where: { user_id: userId, date: { gte: today, lt: tomorrow } } }),
     prisma.doctorActivity.aggregate({
       where: { user_id: userId, date: { gte: today, lt: tomorrow } },
       _sum: { samples_given: true },
@@ -65,15 +76,17 @@ export const submitReport = asyncHandler(async (req, res) => {
       user: { connect: { id: userId } },
       report_date: today,
       summary: summary ?? null,
-      visits_count: visitsCount,
+      visits_count: visitsCount + pharmCount,
       samples_count: samplesAgg._sum.samples_given ?? 0,
       status: "SUBMITTED",
+      jfw_observer_id: jfw_observer_id ?? null,
     },
     update: {
       summary: summary ?? undefined,
-      visits_count: visitsCount,
+      visits_count: visitsCount + pharmCount,
       samples_count: samplesAgg._sum.samples_given ?? 0,
       status: "SUBMITTED",
+      jfw_observer_id: jfw_observer_id ?? null,
     },
   });
 
@@ -200,4 +213,99 @@ export const rejectReport = asyncHandler(async (req, res) => {
   ]);
 
   res.status(200).json({ success: true, data: updated });
+});
+
+// GET /api/daily-report/observers — supervisors/managers in same company (for JFW selection)
+export const getCompanyObservers = asyncHandler(async (req, res) => {
+  const currentUser = await prisma.user.findUnique({
+    where: { id: req.user.id },
+    select: { company_id: true },
+  });
+  if (!currentUser?.company_id) return res.status(200).json({ success: true, data: [] });
+
+  const observers = await prisma.user.findMany({
+    where: {
+      company_id: currentUser.company_id,
+      role: { in: ["Supervisor", "Manager", "COUNTRY_MGR"] },
+    },
+    select: { id: true, firstname: true, lastname: true, role: true },
+    orderBy: [{ role: "asc" }, { firstname: "asc" }],
+  });
+
+  res.status(200).json({ success: true, data: observers });
+});
+
+// GET /api/daily-report/:id/activities
+// Returns every DoctorActivity logged by the rep on the report's date.
+// Scoped to the supervisor's company so a supervisor can never peek at another company.
+export const getReportActivities = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { company_id } = req.user;
+
+  const report = await prisma.dailyReport.findUnique({
+    where: { id },
+    include: { user: { select: { id: true, company_id: true } } },
+  });
+
+  if (!report || report.user.company_id !== company_id) {
+    res.status(404);
+    throw new Error("Report not found");
+  }
+
+  const start = dayStart(new Date(report.report_date));
+  const end   = new Date(start);
+  end.setUTCDate(start.getUTCDate() + 1);
+
+  const activities = await prisma.doctorActivity.findMany({
+    where: { user_id: report.user_id, date: { gte: start, lt: end } },
+    include: {
+      doctor:           { select: { id: true, doctor_name: true, speciality: true, location: true, town: true } },
+      focused_product:  { select: { id: true, product_name: true } },
+      products_detailed: { select: { id: true, product_name: true } },
+    },
+    orderBy: { date: "asc" },
+  });
+
+  res.json({ success: true, data: activities });
+});
+
+// GET /api/daily-report/company?days=30&status=SUBMITTED,APPROVED
+export const getCompanyReports = asyncHandler(async (req, res) => {
+  const { company_id } = req.user;
+  if (!company_id) return res.status(200).json({ success: true, data: [] });
+
+  const days = Math.min(parseInt(req.query.days) || 30, 90);
+  const since = new Date();
+  since.setUTCDate(since.getUTCDate() - days);
+  since.setUTCHours(0, 0, 0, 0);
+
+  const allowed = ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED'];
+  const statusFilter = req.query.status
+    ? req.query.status.split(',').filter(s => allowed.includes(s))
+    : allowed;
+
+  const companyUserIds = (
+    await prisma.user.findMany({ where: { company_id }, select: { id: true } })
+  ).map(u => u.id);
+
+  const reports = await prisma.dailyReport.findMany({
+    where: { user_id: { in: companyUserIds }, report_date: { gte: since }, status: { in: statusFilter } },
+    include: { user: { select: { id: true, firstname: true, lastname: true, role: true } } },
+    orderBy: { report_date: 'desc' },
+    take: 200,
+  });
+
+  res.status(200).json({ success: true, data: reports });
+});
+
+// GET /api/daily-report/jfw — reports where I was the JFW observer
+export const getJfwReports = asyncHandler(async (req, res) => {
+  const reports = await prisma.dailyReport.findMany({
+    where: { jfw_observer_id: req.user.id },
+    include: { user: { select: { id: true, firstname: true, lastname: true } } },
+    orderBy: { report_date: 'desc' },
+    take: 100,
+  });
+
+  res.status(200).json({ success: true, data: reports });
 });

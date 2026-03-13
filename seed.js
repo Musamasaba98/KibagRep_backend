@@ -13,10 +13,12 @@ const PASSWORD = "Test1234!";
 // ── Data ─────────────────────────────────────────────────────────────────────
 
 const users = [
-  { username: "rep_nakato",  firstname: "Nakato",  lastname: "Sarah",  email: "rep@kibagrep.dev",        role: "MedicalRep",  gender: "FEMALE", contact: "0700000001" },
-  { username: "sup_mugisha", firstname: "Mugisha",  lastname: "Brian",  email: "supervisor@kibagrep.dev", role: "Supervisor",  gender: "MALE",   contact: "0700000002" },
-  { username: "mgr_kayiira", firstname: "Kayiira",  lastname: "Moses",  email: "manager@kibagrep.dev",    role: "Manager",     gender: "MALE",   contact: "0700000003" },
-  { username: "cm_nalwanga", firstname: "Nalwanga", lastname: "Agnes",  email: "country@kibagrep.dev",    role: "COUNTRY_MGR", gender: "FEMALE", contact: "0700000004" },
+  { username: "rep_nakato",    firstname: "Nakato",   lastname: "Sarah",   email: "rep@kibagrep.dev",          role: "MedicalRep",  gender: "FEMALE", contact: "0700000001" },
+  { username: "sup_mugisha",   firstname: "Mugisha",  lastname: "Brian",   email: "supervisor@kibagrep.dev",   role: "Supervisor",  gender: "MALE",   contact: "0700000002" },
+  { username: "mgr_kayiira",   firstname: "Kayiira",  lastname: "Moses",   email: "manager@kibagrep.dev",      role: "Manager",     gender: "MALE",   contact: "0700000003" },
+  { username: "cm_nalwanga",   firstname: "Nalwanga", lastname: "Agnes",   email: "country@kibagrep.dev",      role: "COUNTRY_MGR", gender: "FEMALE", contact: "0700000004" },
+  { username: "sa_tumwine",    firstname: "Tumwine",  lastname: "Patrick", email: "salesadmin@kibagrep.dev",   role: "SALES_ADMIN", gender: "MALE",   contact: "0700000005" },
+  { username: "super_admin",   firstname: "KibagRep", lastname: "Admin",   email: "admin@kibagrep.dev",        role: "SUPER_ADMIN", gender: "MALE",   contact: "0700000006" },
 ];
 
 const doctors = [
@@ -164,7 +166,7 @@ async function main() {
   const companyId = companyRow?.id ?? (await client.query(`SELECT id FROM "Company" WHERE company_name = $1`, ["Novex Pharma Uganda Ltd"])).rows[0].id;
 
   // Update users with company_id
-  await client.query(`UPDATE "User" SET company_id = $1 WHERE company_id IS NULL AND role IN ('MedicalRep','Supervisor','Manager','COUNTRY_MGR')`, [companyId]);
+  await client.query(`UPDATE "User" SET company_id = $1 WHERE company_id IS NULL AND role IN ('MedicalRep','Supervisor','Manager','COUNTRY_MGR','SALES_ADMIN')`, [companyId]);
   console.log("  ok    Linked users → company");
 
   // ── 6. Org Roles (Supervisor / Manager / MedicalRep records) ─────────────
@@ -428,6 +430,18 @@ async function main() {
     "MonthlyPlan March 2026 (rep_nakato)"
   );
 
+  // ── 17b. CompanyDoctor — add all seeded doctors to Novex's approved list ──
+  console.log("\n── CompanyDoctor ─────────────────────────────────────");
+  for (const doctorId of doctorIds) {
+    await upsertOne(
+      client, "CompanyDoctor",
+      `SELECT 1 FROM "CompanyDoctor" WHERE company_id=$1 AND doctor_id=$2`, [companyId, doctorId],
+      `INSERT INTO "CompanyDoctor" (company_id, doctor_id, added_at) VALUES ($1,$2,NOW()) RETURNING company_id`,
+      [companyId, doctorId],
+      `CompanyDoctor → ${doctorId.slice(0,8)}`
+    );
+  }
+
   // ── Done ──────────────────────────────────────────────────────────────────
   await client.end();
 
@@ -440,6 +454,8 @@ async function main() {
    supervisor@kibagrep.dev → Supervisor
    manager@kibagrep.dev    → Manager
    country@kibagrep.dev    → COUNTRY_MGR
+   salesadmin@kibagrep.dev → SALES_ADMIN
+   admin@kibagrep.dev      → SUPER_ADMIN
 ─────────────────────────────────────────────────────`);
 }
 

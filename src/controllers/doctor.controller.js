@@ -33,20 +33,59 @@ export const getDoctor = getOne("doctor");
 export const deleteDoctor = deleteOne("doctor");
 export const updateDoctor = updateOne("doctor");
 
-// GET /api/doctor — all doctors with the requesting company's tier attached
+// GET /api/doctor — doctor list
+// ?scope=company (default) → only doctors approved for the user's company
+// ?scope=all              → full KibagRep master list (for reps to recommend from)
 export const getAllDoctor = asyncHandler(async (req, res) => {
   const companyId = req.user?.company_id ?? null;
+  const scope = req.query.scope ?? "company";
 
+  if (scope === "company" && companyId) {
+    // Return only doctors on this company's approved list
+    const companyDoctors = await prisma.companyDoctor.findMany({
+      where: { company_id: companyId },
+      include: {
+        doctor: {
+          include: {
+            company_tiers: {
+              where: { company_id: companyId },
+              select: { tier: true, visit_frequency: true, notes: true },
+            },
+          },
+        },
+      },
+      orderBy: { doctor: { doctor_name: "asc" } },
+    });
+
+    const data = companyDoctors.map((cd) => ({
+      company_id: cd.company_id,
+      doctor_id: cd.doctor_id,
+      added_at: cd.added_at,
+      doctor: {
+        ...cd.doctor,
+        company_tier: cd.doctor.company_tiers?.length ? cd.doctor.company_tiers[0] : null,
+        company_tiers: undefined,
+      },
+    }));
+
+    return res.status(200).json({ success: true, data });
+  }
+
+  // scope=all — full master directory, with company tier if available
   const doctors = await prisma.doctor.findMany({
     include: companyId
-      ? { company_tiers: { where: { company_id: companyId }, select: { tier: true, visit_frequency: true, notes: true } } }
+      ? {
+          company_tiers: { where: { company_id: companyId }, select: { tier: true, visit_frequency: true, notes: true } },
+          company_doctors: companyId ? { where: { company_id: companyId }, select: { company_id: true } } : false,
+        }
       : undefined,
     orderBy: { doctor_name: "asc" },
   });
 
-  const data = doctors.map(({ company_tiers, ...rest }) => ({
+  const data = doctors.map(({ company_tiers, company_doctors, ...rest }) => ({
     ...rest,
     company_tier: company_tiers?.length ? company_tiers[0] : null,
+    on_company_list: !!(company_doctors?.length),
   }));
 
   res.status(200).json({ success: true, data });

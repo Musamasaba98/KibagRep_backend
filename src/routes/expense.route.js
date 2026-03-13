@@ -18,16 +18,16 @@ const router = express.Router();
 
 router.use(protect);
 
-// Rep routes
+// Static routes — must come before /:id
 router.get("/my", getMyClaims);
-router.get("/:id", getClaim);
 router.post("/create", validate(CreateClaimSchema), createClaim);
+router.get("/pending", requireRole(["Supervisor", "Manager", "SUPER_ADMIN"]), getPendingClaims);
+
+// Dynamic /:id routes
+router.get("/:id", getClaim);
 router.post("/:id/items", validate(AddExpenseItemSchema), addItem);
 router.delete("/:id/items/:itemId", removeItem);
 router.put("/:id/submit", submitClaim);
-
-// Supervisor routes
-router.get("/pending", requireRole(["Supervisor", "Manager", "SUPER_ADMIN"]), getPendingClaims);
 router.put("/:id/approve", requireRole(["Supervisor", "Manager", "SUPER_ADMIN"]), approveClaim);
 router.put("/:id/reject", requireRole(["Supervisor", "Manager", "SUPER_ADMIN"]), validate(RejectClaimSchema), rejectClaim);
 

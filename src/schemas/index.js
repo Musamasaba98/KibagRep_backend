@@ -14,6 +14,7 @@ export const CreateActivitySchema = z.object({
 // ─── Daily Report ─────────────────────────────────────────────────────────────
 export const SubmitReportSchema = z.object({
   summary: z.string().max(5000).optional(),
+  jfw_observer_id: z.string().optional(),
 });
 
 export const RejectReportSchema = z.object({

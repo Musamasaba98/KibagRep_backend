@@ -148,15 +148,20 @@ export const getPendingCycles = asyncHandler(async (req, res) => {
 
   const userIds = companyUsers.map((u) => u.id);
 
+  // Allow filtering by status. Management roles (SALES_ADMIN, COUNTRY_MGR) default to all; others default to SUBMITTED.
+  const requestedStatus = req.query.status;
+  const mgmtRoles = ["SALES_ADMIN", "COUNTRY_MGR", "SUPER_ADMIN", "Manager"];
+  const isMgmt = mgmtRoles.includes(req.user.role);
+  const statusFilter = requestedStatus ?? (isMgmt ? undefined : "SUBMITTED");
+
   const cycles = await prisma.callCycle.findMany({
-    where: { user_id: { in: userIds }, status: "SUBMITTED" },
+    where: {
+      user_id: { in: userIds },
+      ...(statusFilter ? { status: statusFilter } : {}),
+    },
     include: {
       user: { select: { id: true, firstname: true, lastname: true, role: true } },
-      items: {
-        include: {
-          doctor: { select: { id: true, doctor_name: true, town: true } },
-        },
-      },
+      _count: { select: { items: true } },
     },
     orderBy: { created_at: "desc" },
   });

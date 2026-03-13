@@ -8,13 +8,31 @@ import {
   searchDoctors,
   setDoctorTier,
 } from "../controllers/doctor.controller.js";
+import {
+  recommendDoctor,
+  reportNewClinician,
+  getRecommendations,
+  approveRecommendation,
+  rejectRecommendation,
+  forwardToKibag,
+  incrementUnplannedVisit,
+} from "../controllers/recommendation.controller.js";
 import { protect } from "../middleware/auth.middleware.js";
 import { validate } from "../middleware/validate.middleware.js";
 import { SetDoctorTierSchema } from "../schemas/index.js";
 
 const router = express.Router();
 
-router.get("/search", protect, searchDoctors);                              // before /:id
+// Static routes — must come before /:id
+router.get("/search", protect, searchDoctors);
+router.get("/recommendations", protect, getRecommendations);
+router.post("/recommend", protect, recommendDoctor);
+router.post("/report-clinician", protect, reportNewClinician);
+router.put("/recommendations/:id/approve", protect, approveRecommendation);
+router.put("/recommendations/:id/reject", protect, rejectRecommendation);
+router.put("/recommendations/:id/forward", protect, forwardToKibag);
+router.post("/recommendations/:id/visit", protect, incrementUnplannedVisit);
+
 router.get("/", protect, getAllDoctor);
 router.post("/", createDoctor);
 router.get("/:id", getDoctor);

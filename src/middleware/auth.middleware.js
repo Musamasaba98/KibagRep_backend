@@ -41,11 +41,13 @@ export const protect = async (req, res, next) => {
  * Usage: requireRole("Manager", "Supervisor")
  */
 export const requireRole = (...roles) => {
+  // Support both requireRole("A","B") and requireRole(["A","B"])
+  const allowed = roles.flat();
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({ success: false, error: "Not authenticated" });
     }
-    if (!roles.includes(req.user.role)) {
+    if (!allowed.includes(req.user.role)) {
       return res.status(403).json({ success: false, error: "Access denied" });
     }
     next();

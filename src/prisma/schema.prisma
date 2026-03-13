@@ -23,6 +23,8 @@ model User {
   longitude            Float?
   company              Company?             @relation(fields: [company_id], references: [id])
   company_id           String?
+  territory            Territory?           @relation("UserTerritory", fields: [territory_id], references: [id])
+  territory_id         String?
   team                 Team?                @relation(fields: [team_id], references: [id])
   team_id              String?
   sample_distributions SampleDistribution[]
@@ -43,7 +45,10 @@ model User {
   call_cycles          CallCycle[]
   daily_reports        DailyReport[]
   expense_claims       ExpenseClaim[]
+  tour_plans           TourPlan[]
   sample_balances      SampleBalance[]
+  recommendations      DoctorRecommendation[]
+  sales_targets        SalesTarget[]
 }
 
 model SupervisorProfile {
@@ -108,17 +113,22 @@ model MedicalRep {
 }
 
 model Company {
-  id              String                @id @default(uuid())
-  company_name    String
-  location        String
-  latitude        Float?
-  longitude       Float?
-  products        Product[]
-  users           User[]
-  doctor_tiers    DoctorCompanyTier[]
-  facility_tiers  FacilityCompanyTier[]
-  date_of_joining DateTime              @default(now())
-  updatedAt       DateTime?             @updatedAt
+  id                   String                 @id @default(uuid())
+  company_name         String
+  location             String
+  latitude             Float?
+  longitude            Float?
+  products             Product[]
+  users                User[]
+  doctor_tiers         DoctorCompanyTier[]
+  facility_tiers       FacilityCompanyTier[]
+  company_doctors      CompanyDoctor[]
+  territories          Territory[]
+  doctor_recommendations DoctorRecommendation[]
+  drug_catalog_maps      DrugCatalogProductMap[]
+  is_active            Boolean                @default(true)
+  date_of_joining      DateTime               @default(now())
+  updatedAt            DateTime?              @updatedAt
 }
 
 model Product {
@@ -136,13 +146,15 @@ model Product {
   sample_balances          SampleBalance[]
   pharmacy_activities      PharmacyActivity[]
   procurement_items        ProcurementItem[]
+  generic_name             String?
+  drug_catalog_maps        DrugCatalogProductMap[]
 }
 
 model Doctor {
-  id                   String               @id @default(uuid())
+  id                   String                 @id @default(uuid())
   doctor_name          String
   speciality           String[]
-  cadre                HcpCadre             @default(Doctor)
+  cadre                HcpCadre               @default(Doctor)
   facility             Facility[]
   location             String
   town                 String
@@ -152,22 +164,40 @@ model Doctor {
   sample_distributions SampleDistribution[]
   profile              Profile?
   company_tiers        DoctorCompanyTier[]
-  date_of_joining      DateTime             @default(now())
-  updatedAt            DateTime?            @updatedAt
+  date_of_joining      DateTime               @default(now())
+  updatedAt            DateTime?              @updatedAt
   DoctorActivity       DoctorActivity[]
   call_cycle_items     CallCycleItem[]
+  company_doctors      CompanyDoctor[]
+  recommendations      DoctorRecommendation[]
+  tour_plan_entries    TourPlanEntry[]
+  work_facilities      DoctorFacility[]     @relation("DoctorWorksFacility")
+  license_number       String?              @unique
+  prescribing_level    PrescribingLevel?
+  dispense_events      DispenseEvent[]
 }
 
 model Pharmacy {
   id                   String               @id @default(uuid())
   pharmacy_name        String
   location             String
+  town                 String?
   description          String?
+  contact              String?
+  latitude             Float?
+  longitude            Float?
+  is_active            Boolean              @default(true)
   stock_trackings      StockTracking[]
   updatedAt            DateTime?            @updatedAt
   PharmacyActivity     PharmacyActivity[]
   procurement_contacts ProcurementContact[]
   procurement_orders   ProcurementOrder[]
+  tour_plan_entries    TourPlanEntry[]
+  pharmacy_type        PharmacyType?
+  dispenser_profiles   DispenserProfile[]
+  dispense_events      DispenseEvent[]
+  dispense_rewards     DispenseReward[]
+  daily_stats          PharmacyDailyStats[]
 }
 
 model Team {
@@ -195,7 +225,6 @@ model StockTracking {
   date             DateTime           @default(now())
   pharmacy         Pharmacy           @relation(fields: [pharmacy_id], references: [id])
   product          Product            @relation(fields: [product_id], references: [id])
-  PharmacyActivity PharmacyActivity[]
   quantity         Int
 
   @@id([pharmacy_id, product_id, date])
@@ -233,17 +262,17 @@ model DoctorActivity {
 }
 
 model PharmacyActivity {
-  id                       String        @id @default(uuid())
-  user                     User          @relation(fields: [user_id], references: [id])
-  user_id                  String
-  pharmacy                 Pharmacy      @relation(fields: [pharmacy_id], references: [id])
-  pharmacy_id              String
-  date                     DateTime      @default(now())
-  products_in_stock        Product[]
-  stock_tracking           StockTracking @relation(fields: [stockTrackingPharmacy_id, stockTrackingProduct_id, stockTrackingDate], references: [pharmacy_id, product_id, date])
-  stockTrackingPharmacy_id String
-  stockTrackingProduct_id  String
-  stockTrackingDate        DateTime
+  id                String   @id @default(uuid())
+  user              User     @relation(fields: [user_id], references: [id])
+  user_id           String
+  pharmacy          Pharmacy @relation(fields: [pharmacy_id], references: [id])
+  pharmacy_id       String
+  date              DateTime @default(now())
+  products_in_stock Product[]
+  stock_noted       Json?
+  outcome           String?
+  gps_lat           Float?
+  gps_lng           Float?
 }
 
 // The person at a pharmacy or hospital who handles orders for products.
@@ -338,6 +367,12 @@ model Facility {
   procurement_contacts ProcurementContact[]
   procurement_orders   ProcurementOrder[]
   company_tiers        FacilityCompanyTier[]
+  territory_links      TerritoryFacility[]
+  working_doctors      DoctorFacility[]      @relation("DoctorWorksFacility")
+  tour_plan_entries    TourPlanEntry[]
+  town                 String?
+  facility_type        String?
+  dispense_events      DispenseEvent[]
 }
 
 model CallCycle {
@@ -423,6 +458,7 @@ enum UserRole {
   MedicalRep
   USER
   COUNTRY_MGR
+  SALES_ADMIN
   SUPER_ADMIN
 }
 
@@ -449,19 +485,20 @@ enum ProductClassification {
 }
 
 model DailyReport {
-  id           String       @id @default(uuid())
-  user         User         @relation(fields: [user_id], references: [id])
-  user_id      String
-  report_date  DateTime     @default(now())
-  summary      String?
-  visits_count Int          @default(0)
-  samples_count Int         @default(0)
-  status       ReportStatus @default(DRAFT)
-  reviewed_by  String?
-  reviewed_at  DateTime?
-  review_note  String?
-  created_at   DateTime     @default(now())
-  updated_at   DateTime?    @updatedAt
+  id              String       @id @default(uuid())
+  user            User         @relation(fields: [user_id], references: [id])
+  user_id         String
+  report_date     DateTime     @default(now())
+  summary         String?
+  visits_count    Int          @default(0)
+  samples_count   Int          @default(0)
+  status          ReportStatus @default(DRAFT)
+  reviewed_by     String?
+  reviewed_at     DateTime?
+  review_note     String?
+  jfw_observer_id String?      // ID of supervisor/manager who joined fieldwork today
+  created_at      DateTime     @default(now())
+  updated_at      DateTime?    @updatedAt
 
   @@unique([user_id, report_date])
 }
@@ -471,6 +508,114 @@ enum ReportStatus {
   SUBMITTED
   APPROVED
   REJECTED
+}
+
+model TourPlan {
+  id          String           @id @default(uuid())
+  user        User             @relation(fields: [user_id], references: [id])
+  user_id     String
+  month       Int
+  year        Int
+  status      TourPlanStatus   @default(DRAFT)
+  reviewed_by String?
+  reviewed_at DateTime?
+  review_note String?
+  days        TourPlanDay[]
+  entries     TourPlanEntry[]
+  created_at  DateTime         @default(now())
+  updated_at  DateTime?        @updatedAt
+
+  @@unique([user_id, month, year])
+}
+
+model TourPlanDay {
+  id              String   @id @default(uuid())
+  plan            TourPlan @relation(fields: [plan_id], references: [id])
+  plan_id         String
+  day_number      Int
+  morning_area    String?  // morning territory/cluster
+  evening_area    String?  // evening territory/cluster (often pharmacies)
+  notes           String?
+  is_off_day      Boolean  @default(false)
+  // Expense tracking per day (mirrors the paper form)
+  daily_allowance Float    @default(0)
+  transport       Float    @default(0)
+  airtime         Float    @default(0)
+  accommodation   Float    @default(0)  // upcountry trips
+  other_costs     Float    @default(0)
+
+  @@unique([plan_id, day_number])
+}
+
+model TourPlanEntry {
+  id            String        @id @default(uuid())
+  plan          TourPlan      @relation(fields: [plan_id], references: [id])
+  plan_id       String
+  day_number    Int
+  entry_type    TourEntryType @default(CLINICIAN)
+  doctor_id     String?
+  doctor        Doctor?       @relation(fields: [doctor_id], references: [id])
+  cycle_item_id String?
+  // Pharmacy entry — linked to platform pharmacy record (pharmacy_name is fallback for new ones)
+  pharmacy_id   String?
+  pharmacy      Pharmacy?     @relation(fields: [pharmacy_id], references: [id])
+  pharmacy_name String?       // free-text fallback when pharmacy not yet in system
+  // Optional facility tag on the entry
+  facility_id   String?
+  facility      Facility?     @relation(fields: [facility_id], references: [id])
+  notes         String?
+  slot          TourSlot      @default(MORNING)
+  sort_order    Int           @default(0)
+}
+
+enum TourEntryType {
+  CLINICIAN
+  PHARMACY
+}
+
+enum TourSlot {
+  MORNING
+  EVENING
+}
+
+enum TourPlanStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+model Territory {
+  id          String              @id @default(uuid())
+  name        String              // e.g. "Kampala Central"
+  description String?
+  region      String?             // e.g. "Central", "Eastern", "Western"
+  company     Company             @relation(fields: [company_id], references: [id])
+  company_id  String
+  facilities  TerritoryFacility[]
+  reps        User[]              @relation("UserTerritory")
+  created_at  DateTime            @default(now())
+  updated_at  DateTime?           @updatedAt
+}
+
+model TerritoryFacility {
+  territory    Territory @relation(fields: [territory_id], references: [id])
+  territory_id String
+  facility     Facility  @relation(fields: [facility_id], references: [id])
+  facility_id  String
+
+  @@id([territory_id, facility_id])
+}
+
+// Doctor can work at multiple facilities (many-to-many)
+model DoctorFacility {
+  doctor      Doctor   @relation("DoctorWorksFacility", fields: [doctor_id], references: [id])
+  doctor_id   String
+  facility    Facility @relation("DoctorWorksFacility", fields: [facility_id], references: [id])
+  facility_id String
+  is_primary  Boolean  @default(false)
+
+  @@id([doctor_id, facility_id])
 }
 
 model AuditLog {
@@ -536,4 +681,310 @@ enum ExpenseCategory {
   MEALS
   PROMO_ITEMS
   OTHER
+}
+
+// A pharma company's approved doctor list.
+// Each (company, doctor) pair must be approved before a rep can add the doctor to their call cycle.
+model CompanyDoctor {
+  company_id  String
+  doctor_id   String
+  company     Company  @relation(fields: [company_id], references: [id])
+  doctor      Doctor   @relation(fields: [doctor_id], references: [id])
+  added_by    String?  // user_id of the supervisor/manager who approved
+  added_at    DateTime @default(now())
+
+  @@id([company_id, doctor_id])
+}
+
+// A rep recommends a doctor (from master list) or reports a new unknown clinician.
+model DoctorRecommendation {
+  id             String               @id @default(uuid())
+  company        Company              @relation(fields: [company_id], references: [id])
+  company_id     String
+  recommended_by User                 @relation(fields: [user_id], references: [id])
+  user_id        String
+  // Set when recommending an existing KibagRep doctor
+  doctor         Doctor?              @relation(fields: [doctor_id], references: [id])
+  doctor_id      String?
+  // Set when reporting an unknown clinician not yet on KibagRep
+  clinician_name String?
+  clinician_cadre HcpCadre?
+  clinician_location String?
+  clinician_contact  String?
+  unplanned_visit_count Int           @default(0) // auto-incremented; auto-flags at 3
+  status         RecommendationStatus @default(PENDING)
+  reviewed_by    String?              // user_id of supervisor/manager who acted
+  reviewed_at    DateTime?
+  review_note    String?
+  created_at     DateTime             @default(now())
+  updated_at     DateTime?            @updatedAt
+}
+
+enum RecommendationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  FORWARDED_TO_KIBAG
+}
+
+// =============================================================================
+// PRESCRIPTION DEMAND INTELLIGENCE LAYER
+// =============================================================================
+
+enum DispenseStatus {
+  PENDING
+  VERIFIED
+  FLAGGED
+  REJECTED
+}
+enum VerificationMethod {
+  AUTO_CLEAN
+  MANUAL_QA
+  AI_FLAGGED
+}
+enum RewardType {
+  AIRTIME
+  MOBILE_MONEY
+  LOYALTY_POINTS
+  PROCUREMENT_DISCOUNT
+}
+enum RewardStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+}
+enum PharmacyType {
+  INDEPENDENT
+  CHAIN
+  HOSPITAL_INTERNAL
+  DISPENSING_CLINIC
+  COMMUNITY_HEALTH
+}
+enum DosageForm {
+  TABLET
+  CAPSULE
+  SYRUP
+  INJECTION
+  CREAM
+  DROPS
+  INHALER
+  SUPPOSITORY
+  PATCH
+  POWDER
+  OTHER
+}
+enum BrandOrGeneric {
+  BRAND
+  GENERIC
+  UNKNOWN
+}
+enum PrescribingLevel {
+  CONSULTANT
+  SPECIALIST
+  MEDICAL_OFFICER
+  RESIDENT
+  CLINICAL_OFFICER
+  NURSE_PRACTITIONER
+  PHARMACIST
+  DISPENSER
+}
+
+model DrugCatalog {
+  id                String        @id @default(uuid())
+  inn_name          String
+  brand_names       String[]
+  atc_code          String?
+  atc_class         String?
+  dosage_form       DosageForm?
+  strength          String?
+  is_rx_only        Boolean       @default(true)
+  is_controlled     Boolean       @default(false)
+  therapeutic_class String?
+  manufacturer      String?
+  dispense_items    DispenseItem[]
+  product_mappings  DrugCatalogProductMap[]
+  created_at        DateTime      @default(now())
+  updated_at        DateTime?     @updatedAt
+
+  @@index([inn_name])
+  @@index([atc_code])
+  @@index([atc_class])
+}
+
+model DrugCatalogProductMap {
+  drug_catalog    DrugCatalog @relation(fields: [drug_catalog_id], references: [id])
+  drug_catalog_id String
+  product         Product     @relation(fields: [product_id], references: [id])
+  product_id      String
+  company         Company     @relation(fields: [company_id], references: [id])
+  company_id      String
+  is_primary      Boolean     @default(true)
+
+  @@id([drug_catalog_id, product_id])
+  @@index([drug_catalog_id])
+  @@index([product_id])
+}
+
+model DispenserProfile {
+  id              String          @id @default(uuid())
+  pharmacy        Pharmacy        @relation(fields: [pharmacy_id], references: [id])
+  pharmacy_id     String
+  name            String
+  phone           String          @unique
+  is_active       Boolean         @default(true)
+  trust_score     Float           @default(1.0)
+  total_events    Int             @default(0)
+  verified_events Int             @default(0)
+  flagged_events  Int             @default(0)
+  joined_at       DateTime        @default(now())
+  last_active_at  DateTime?
+  dispense_events DispenseEvent[]
+  rewards         DispenseReward[]
+  updated_at      DateTime?       @updatedAt
+
+  @@index([pharmacy_id])
+  @@index([phone])
+}
+
+model DispenseEvent {
+  id                    String              @id @default(uuid())
+  pharmacy              Pharmacy            @relation(fields: [pharmacy_id], references: [id])
+  pharmacy_id           String
+  dispenser             DispenserProfile?   @relation(fields: [dispenser_id], references: [id])
+  dispenser_id          String?
+  doctor                Doctor?             @relation(fields: [doctor_id], references: [id])
+  doctor_id             String?
+  doctor_name_raw       String?
+  prescribing_level_raw String?
+  facility              Facility?           @relation(fields: [facility_id], references: [id])
+  facility_id           String?
+  facility_name_raw     String?
+  dispense_date         DateTime
+  prescription_date     DateTime?
+  status                DispenseStatus      @default(PENDING)
+  verification_method   VerificationMethod?
+  verified_at           DateTime?
+  verified_by_user_id   String?
+  rejection_reason      String?
+  anomaly_score         Float?
+  anomaly_flags         String[]
+  notes                 String?
+  items                 DispenseItem[]
+  images                PrescriptionImage[]
+  reward                DispenseReward?
+  created_at            DateTime            @default(now())
+  updated_at            DateTime?           @updatedAt
+
+  @@index([pharmacy_id, dispense_date])
+  @@index([doctor_id, dispense_date])
+  @@index([facility_id, dispense_date])
+  @@index([status, created_at])
+  @@index([dispense_date])
+  @@index([anomaly_score])
+}
+
+model DispenseItem {
+  id               String         @id @default(uuid())
+  event            DispenseEvent  @relation(fields: [event_id], references: [id])
+  event_id         String
+  drug_catalog     DrugCatalog?   @relation(fields: [drug_catalog_id], references: [id])
+  drug_catalog_id  String?
+  drug_name_raw    String?
+  qty_prescribed   Int?
+  qty_dispensed    Int
+  is_partial       Boolean        @default(false)
+  dosage_form      DosageForm?
+  strength_raw     String?
+  brand_or_generic BrandOrGeneric @default(UNKNOWN)
+  unit_price_ugx   Float?
+  created_at       DateTime       @default(now())
+
+  @@index([event_id])
+  @@index([drug_catalog_id])
+  @@index([event_id, drug_catalog_id])
+}
+
+model PrescriptionImage {
+  id            String        @id @default(uuid())
+  event         DispenseEvent @relation(fields: [event_id], references: [id])
+  event_id      String
+  image_url     String
+  image_key     String
+  file_size_kb  Int?
+  phash         String?
+  phash_flagged Boolean       @default(false)
+  uploaded_at   DateTime      @default(now())
+  reviewed_at   DateTime?
+  reviewer_id   String?
+
+  @@index([event_id])
+  @@index([phash])
+}
+
+model PrescriptionHashIndex {
+  phash         String   @id
+  event_id      String
+  pharmacy_id   String
+  dispense_date DateTime
+  created_at    DateTime @default(now())
+
+  @@index([pharmacy_id])
+}
+
+model DispenseReward {
+  id             String            @id @default(uuid())
+  event          DispenseEvent     @relation(fields: [event_id], references: [id])
+  event_id       String            @unique
+  pharmacy       Pharmacy          @relation(fields: [pharmacy_id], references: [id])
+  pharmacy_id    String
+  dispenser      DispenserProfile? @relation(fields: [dispenser_id], references: [id])
+  dispenser_id   String?
+  reward_type    RewardType
+  amount         Float
+  status         RewardStatus      @default(PENDING)
+  processed_at   DateTime?
+  paid_at        DateTime?
+  failure_reason String?
+  ext_reference  String?
+  created_at     DateTime          @default(now())
+
+  @@index([pharmacy_id, status])
+  @@index([status, created_at])
+}
+
+model PharmacyDailyStats {
+  id                String   @id @default(uuid())
+  pharmacy          Pharmacy @relation(fields: [pharmacy_id], references: [id])
+  pharmacy_id       String
+  stat_date         DateTime @db.Date
+  event_count       Int      @default(0)
+  item_count        Int      @default(0)
+  unique_doctors    Int      @default(0)
+  verified_count    Int      @default(0)
+  flagged_count     Int      @default(0)
+  reward_total_ugx  Float    @default(0)
+  rolling_7d_avg    Float?
+  rolling_7d_stddev Float?
+  updated_at        DateTime @updatedAt
+
+  @@unique([pharmacy_id, stat_date])
+  @@index([pharmacy_id, stat_date])
+  @@index([stat_date])
+}
+
+// Monthly sales targets set by management per rep
+model SalesTarget {
+  id             String   @id @default(uuid())
+  user           User     @relation(fields: [user_id], references: [id])
+  user_id        String
+  month          Int
+  year           Int
+  target_value   Int      @default(0)  // monthly sales value target (UGX)
+  target_units   Int      @default(0)  // monthly units sold target
+  set_by         String?               // user_id of the manager/supervisor who set this
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  @@unique([user_id, month, year])
 }

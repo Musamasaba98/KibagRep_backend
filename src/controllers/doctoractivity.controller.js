@@ -117,9 +117,13 @@ export const getCompanyFeed = asyncHandler(async (req, res) => {
     ? await prisma.user.findMany({ where: { company_id: currentUser.company_id }, select: { id: true } })
     : [];
   const userIds = companyUsers.map((u) => u.id);
-  const [activities, total, repSummary] = await Promise.all([
+  const where = userIds.length
+    ? { user_id: { in: userIds }, date: { gte: since } }
+    : { id: "none" }; // empty result when no company users
+
+  const [activities, total, allForSummary] = await Promise.all([
     prisma.doctorActivity.findMany({
-      where: { user_id: { in: userIds }, date: { gte: since } },
+      where,
       include: {
         user: { select: { id: true, firstname: true, lastname: true, role: true } },
         doctor: { select: { id: true, doctor_name: true, town: true } },
@@ -129,17 +133,27 @@ export const getCompanyFeed = asyncHandler(async (req, res) => {
       skip,
       take: limit,
     }),
-    prisma.doctorActivity.count({ where: { user_id: { in: userIds }, date: { gte: since } } }),
-    prisma.doctorActivity.groupBy({
-      by: ["user_id"],
-      where: { user_id: { in: userIds }, date: { gte: since } },
-      _count: { id: true },
-      _sum: { samples_given: true },
+    prisma.doctorActivity.count({ where }),
+    prisma.doctorActivity.findMany({
+      where,
+      select: { user_id: true, samples_given: true },
     }),
   ]);
+
   const usersMap = await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, firstname: true, lastname: true, role: true } });
   const usersById = Object.fromEntries(usersMap.map((u) => [u.id, u]));
-  const summary = repSummary.map((r) => ({ user: usersById[r.user_id], visits: r._count.id, samples: r._sum.samples_given ?? 0 }));
+
+  const summaryMap = {};
+  for (const a of allForSummary) {
+    if (!summaryMap[a.user_id]) summaryMap[a.user_id] = { visits: 0, samples: 0 };
+    summaryMap[a.user_id].visits++;
+    summaryMap[a.user_id].samples += a.samples_given ?? 0;
+  }
+  const summary = Object.entries(summaryMap).map(([user_id, stats]) => ({
+    user: usersById[user_id],
+    visits: stats.visits,
+    samples: stats.samples,
+  }));
   res.status(200).json({ success: true, data: activities, summary, meta: { total, page, limit, pages: Math.ceil(total / limit) } });
 });
 
