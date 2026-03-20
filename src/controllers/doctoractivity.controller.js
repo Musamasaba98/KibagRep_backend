@@ -15,10 +15,24 @@ function gpsDistanceMetres(lat1, lng1, lat2, lng2) {
 
 const GPS_ANOMALY_THRESHOLD_M = 500;
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function startOfToday() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function startOfMonth() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1);
+}
+
+// ── Endpoints ─────────────────────────────────────────────────────────────────
+
 export const getTodayActivities = asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = startOfToday();
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
   const activities = await prisma.doctorActivity.findMany({
@@ -52,7 +66,6 @@ export const createDoctorActivity = asyncHandler(async (req, res) => {
   const month = now.getMonth() + 1;
   const year = now.getFullYear();
 
-  // Atomic: create activity + increment visits_done on matching cycle item
   const [doctorActivity] = await prisma.$transaction([
     prisma.doctorActivity.create({
       data: {
@@ -65,6 +78,7 @@ export const createDoctorActivity = asyncHandler(async (req, res) => {
         gps_lat: gps_lat ?? null,
         gps_lng: gps_lng ?? null,
         gps_anomaly,
+        visit_status: "VISITED",
       },
       include: {
         doctor: { select: { id: true, doctor_name: true } },
@@ -78,6 +92,147 @@ export const createDoctorActivity = asyncHandler(async (req, res) => {
   ]);
 
   res.status(201).json({ success: true, data: doctorActivity, gps_anomaly });
+});
+
+// POST /api/field-doctor/log-missed
+// Log a missed / rescheduled / skipped visit — no product required
+export const logMissedVisit = asyncHandler(async (req, res) => {
+  const { doctor_id, visit_status, miss_reason, gps_lat, gps_lng } = req.body;
+  const user_id = req.user.id;
+
+  const validStatuses = ["MISSED", "RESCHEDULED", "SKIPPED"];
+  if (!doctor_id) { res.status(400); throw new Error("doctor_id is required"); }
+  if (!validStatuses.includes(visit_status)) {
+    res.status(400);
+    throw new Error("visit_status must be MISSED, RESCHEDULED, or SKIPPED");
+  }
+
+  const activity = await prisma.doctorActivity.create({
+    data: {
+      user:        { connect: { id: user_id } },
+      doctor:      { connect: { id: doctor_id } },
+      samples_given: 0,
+      visit_status,
+      miss_reason:  miss_reason ?? null,
+      gps_lat:      gps_lat ?? null,
+      gps_lng:      gps_lng ?? null,
+    },
+    include: {
+      doctor: { select: { id: true, doctor_name: true } },
+    },
+  });
+
+  res.status(201).json({ success: true, data: activity });
+});
+
+// GET /api/field-doctor/backlog
+// Returns unvisited cycle doctors where visits_done < expected pace for today
+export const getBacklog = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const now = new Date();
+  const month = now.getMonth() + 1;
+  const year = now.getFullYear();
+
+  // Get current cycle
+  const cycle = await prisma.callCycle.findUnique({
+    where: { user_id_month_year: { user_id: userId, month, year } },
+    include: {
+      items: {
+        include: {
+          doctor: { select: { id: true, doctor_name: true, town: true, speciality: true, cadre: true } },
+        },
+      },
+    },
+  });
+
+  if (!cycle || !cycle.items.length) {
+    return res.status(200).json({ success: true, data: [], total: 0 });
+  }
+
+  // Working days elapsed in the month (Mon–Sat, up to today)
+  const daysInMonth = new Date(year, month, 0).getDate();
+  let workDaysElapsed = 0;
+  let totalWorkDays = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const day = new Date(year, month - 1, d);
+    if (day.getDay() !== 0) {
+      totalWorkDays++;
+      if (d <= now.getDate()) workDaysElapsed++;
+    }
+  }
+
+  // Expected visits_done by today = (workDaysElapsed / totalWorkDays) * frequency
+  const backlog = cycle.items
+    .map((item) => {
+      const expected = Math.floor((workDaysElapsed / totalWorkDays) * item.frequency);
+      const behind = Math.max(0, expected - item.visits_done);
+      return { ...item, expected_by_today: expected, visits_behind: behind };
+    })
+    .filter((item) => item.visits_behind > 0)
+    .sort((a, b) => b.visits_behind - a.visits_behind);
+
+  res.status(200).json({ success: true, data: backlog, total: backlog.length });
+});
+
+// GET /api/field-doctor/mtd-stats
+// MTD coverage: daily call avg, unique doctors visited, doctor coverage %
+export const getMtdStats = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const now = new Date();
+  const month = now.getMonth() + 1;
+  const year = now.getFullYear();
+  const monthStart = startOfMonth();
+
+  const [activities, cycle] = await Promise.all([
+    prisma.doctorActivity.findMany({
+      where: {
+        user_id: userId,
+        date: { gte: monthStart },
+        visit_status: "VISITED",
+      },
+      select: { doctor_id: true, date: true },
+    }),
+    prisma.callCycle.findUnique({
+      where: { user_id_month_year: { user_id: userId, month, year } },
+      select: { items: { select: { doctor_id: true, frequency: true, visits_done: true } } },
+    }),
+  ]);
+
+  // Working days elapsed (Mon-Sat up to today)
+  let workDaysElapsed = 0;
+  for (let d = 1; d <= now.getDate(); d++) {
+    if (new Date(year, month - 1, d).getDay() !== 0) workDaysElapsed++;
+  }
+
+  const uniqueDoctorsVisited = new Set(activities.map((a) => a.doctor_id)).size;
+  const totalCycleDoctors = cycle?.items?.length ?? 0;
+  const totalVisitsMtd = activities.length;
+  const dailyCallAvg = workDaysElapsed > 0 ? +(totalVisitsMtd / workDaysElapsed).toFixed(1) : 0;
+  const doctorCoveragePct = totalCycleDoctors > 0
+    ? Math.round((uniqueDoctorsVisited / totalCycleDoctors) * 100)
+    : null;
+
+  // Missed/skipped count this month
+  const missedCount = await prisma.doctorActivity.count({
+    where: {
+      user_id: userId,
+      date: { gte: monthStart },
+      visit_status: { in: ["MISSED", "SKIPPED", "RESCHEDULED"] },
+    },
+  });
+
+  res.status(200).json({
+    success: true,
+    data: {
+      total_visits_mtd: totalVisitsMtd,
+      unique_doctors_visited: uniqueDoctorsVisited,
+      total_cycle_doctors: totalCycleDoctors,
+      doctor_coverage_pct: doctorCoveragePct,
+      daily_call_avg: dailyCallAvg,
+      work_days_elapsed: workDaysElapsed,
+      missed_count: missedCount,
+    },
+  });
 });
 
 export const getActivityHistory = asyncHandler(async (req, res) => {
@@ -119,7 +274,7 @@ export const getCompanyFeed = asyncHandler(async (req, res) => {
   const userIds = companyUsers.map((u) => u.id);
   const where = userIds.length
     ? { user_id: { in: userIds }, date: { gte: since } }
-    : { id: "none" }; // empty result when no company users
+    : { id: "none" };
 
   const [activities, total, allForSummary] = await Promise.all([
     prisma.doctorActivity.findMany({
@@ -181,6 +336,7 @@ export const logNca = asyncHandler(async (req, res) => {
       focused_product: { connect: { id: focused_product_id } },
       samples_given:   0,
       nca_reason:      nca_reason ?? null,
+      visit_status:    "VISITED",  // NCA is still a contact attempt — counts as visited
       gps_lat:         gps_lat ?? null,
       gps_lng:         gps_lng ?? null,
       gps_anomaly,

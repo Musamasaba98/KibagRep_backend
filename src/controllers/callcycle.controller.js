@@ -207,6 +207,28 @@ export const rejectCycle = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: updated, note: note ?? null });
 });
 
+// PATCH /api/cycle/current/items/:itemId/precall — set pre-call note for a cycle doctor
+export const updatePrecallNote = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const { itemId } = req.params;
+  const { precall_note } = req.body;
+
+  const item = await prisma.callCycleItem.findUnique({
+    where: { id: itemId },
+    include: { cycle: true },
+  });
+
+  if (!item) { res.status(404); throw new Error("Cycle item not found"); }
+  if (item.cycle.user_id !== userId) { res.status(403); throw new Error("Not your cycle"); }
+
+  const updated = await prisma.callCycleItem.update({
+    where: { id: itemId },
+    data: { precall_note: precall_note ?? null },
+  });
+
+  res.status(200).json({ success: true, data: updated });
+});
+
 // GET /api/cycle/:id/adherence — doctors under-visited relative to their target frequency
 export const getCycleAdherence = asyncHandler(async (req, res) => {
   const { id } = req.params;

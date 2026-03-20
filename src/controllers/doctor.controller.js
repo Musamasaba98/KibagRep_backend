@@ -36,26 +36,49 @@ export const updateDoctor = updateOne("doctor");
 // GET /api/doctor — doctor list
 // ?scope=company (default) → only doctors approved for the user's company
 // ?scope=all              → full KibagRep master list (for reps to recommend from)
+// ?q=search              → filter by name / town / location
+// ?page=1&limit=25       → pagination
 export const getAllDoctor = asyncHandler(async (req, res) => {
   const companyId = req.user?.company_id ?? null;
   const scope = req.query.scope ?? "company";
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.min(Math.max(1, parseInt(req.query.limit) || 25), 100);
+  const skip = (page - 1) * limit;
+  const q = (req.query.q || "").trim();
+
+  const nameFilter = q.length >= 1
+    ? { OR: [
+        { doctor_name: { contains: q, mode: "insensitive" } },
+        { town: { contains: q, mode: "insensitive" } },
+        { location: { contains: q, mode: "insensitive" } },
+      ]}
+    : {};
 
   if (scope === "company" && companyId) {
-    // Return only doctors on this company's approved list
-    const companyDoctors = await prisma.companyDoctor.findMany({
-      where: { company_id: companyId },
-      include: {
-        doctor: {
-          include: {
-            company_tiers: {
-              where: { company_id: companyId },
-              select: { tier: true, visit_frequency: true, notes: true },
+    const where = {
+      company_id: companyId,
+      ...(q.length >= 1 ? { doctor: nameFilter } : {}),
+    };
+
+    const [companyDoctors, total] = await Promise.all([
+      prisma.companyDoctor.findMany({
+        where,
+        include: {
+          doctor: {
+            include: {
+              company_tiers: {
+                where: { company_id: companyId },
+                select: { tier: true, visit_frequency: true, notes: true },
+              },
             },
           },
         },
-      },
-      orderBy: { doctor: { doctor_name: "asc" } },
-    });
+        orderBy: { doctor: { doctor_name: "asc" } },
+        skip,
+        take: limit,
+      }),
+      prisma.companyDoctor.count({ where }),
+    ]);
 
     const data = companyDoctors.map((cd) => ({
       company_id: cd.company_id,
@@ -68,19 +91,29 @@ export const getAllDoctor = asyncHandler(async (req, res) => {
       },
     }));
 
-    return res.status(200).json({ success: true, data });
+    return res.status(200).json({
+      success: true,
+      data,
+      meta: { total, page, limit, pages: Math.ceil(total / limit) },
+    });
   }
 
-  // scope=all — full master directory, with company tier if available
-  const doctors = await prisma.doctor.findMany({
-    include: companyId
-      ? {
-          company_tiers: { where: { company_id: companyId }, select: { tier: true, visit_frequency: true, notes: true } },
-          company_doctors: companyId ? { where: { company_id: companyId }, select: { company_id: true } } : false,
-        }
-      : undefined,
-    orderBy: { doctor_name: "asc" },
-  });
+  // scope=all — full master directory, with company membership flag
+  const [doctors, total] = await Promise.all([
+    prisma.doctor.findMany({
+      where: nameFilter,
+      include: companyId
+        ? {
+            company_tiers: { where: { company_id: companyId }, select: { tier: true, visit_frequency: true, notes: true } },
+            company_doctors: { where: { company_id: companyId }, select: { company_id: true } },
+          }
+        : undefined,
+      orderBy: { doctor_name: "asc" },
+      skip,
+      take: limit,
+    }),
+    prisma.doctor.count({ where: nameFilter }),
+  ]);
 
   const data = doctors.map(({ company_tiers, company_doctors, ...rest }) => ({
     ...rest,
@@ -88,7 +121,11 @@ export const getAllDoctor = asyncHandler(async (req, res) => {
     on_company_list: !!(company_doctors?.length),
   }));
 
-  res.status(200).json({ success: true, data });
+  res.status(200).json({
+    success: true,
+    data,
+    meta: { total, page, limit, pages: Math.ceil(total / limit) },
+  });
 });
 
 // PUT /api/doctor/:id/tier — upsert this company's tier classification for a doctor

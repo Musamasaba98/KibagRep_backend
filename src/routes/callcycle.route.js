@@ -11,6 +11,7 @@ import {
   approveCycle,
   rejectCycle,
   getCycleAdherence,
+  updatePrecallNote,
 } from "../controllers/callcycle.controller.js";
 
 const router = express.Router();
@@ -19,6 +20,7 @@ const router = express.Router();
 router.get("/current", protect, getCurrentCycle);
 router.post("/current/items", protect, validate(AddCycleItemSchema), addCycleItem);
 router.delete("/current/items/:itemId", protect, removeCycleItem);
+router.patch("/current/items/:itemId/precall", protect, updatePrecallNote);
 router.post("/:id/submit", protect, submitCycle);
 
 // Supervisor routes

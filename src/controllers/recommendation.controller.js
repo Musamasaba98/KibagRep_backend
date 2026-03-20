@@ -123,7 +123,7 @@ export const getRecommendations = asyncHandler(async (req, res) => {
 
   const where = {
     company_id: companyId,
-    ...(status ? { status } : {}),
+    status: status ?? "PENDING",  // default to PENDING — only show actionable items
     ...(!isReviewer ? { user_id: userId } : {}),
   };
 

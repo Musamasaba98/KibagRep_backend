@@ -109,27 +109,32 @@ export const getTeamMap = asyncHandler(async (req, res) => {
 
   const data = await Promise.all(
     reps.map(async (rep) => {
-      const activities = await prisma.doctorActivity.findMany({
-        where: {
-          user_id: rep.id,
-          date: { gte: since },
-          gps_lat: { not: null },
-          gps_lng: { not: null },
-        },
-        select: {
-          id: true,
-          date: true,
-          gps_lat: true,
-          gps_lng: true,
-          gps_anomaly: true,
-          nca_reason: true,
-          doctor: { select: { doctor_name: true, town: true } },
-          focused_product: { select: { product_name: true } },
-        },
-        orderBy: { date: "desc" },
-        take: 100,
-      });
-      return { user: rep, activities };
+      const [activities, total_visits] = await Promise.all([
+        prisma.doctorActivity.findMany({
+          where: {
+            user_id: rep.id,
+            date: { gte: since },
+            gps_lat: { not: null },
+            gps_lng: { not: null },
+          },
+          select: {
+            id: true,
+            date: true,
+            gps_lat: true,
+            gps_lng: true,
+            gps_anomaly: true,
+            nca_reason: true,
+            doctor: { select: { doctor_name: true, town: true } },
+            focused_product: { select: { product_name: true } },
+          },
+          orderBy: { date: "desc" },
+          take: 100,
+        }),
+        prisma.doctorActivity.count({
+          where: { user_id: rep.id, date: { gte: since } },
+        }),
+      ]);
+      return { user: rep, activities, total_visits };
     })
   );
 

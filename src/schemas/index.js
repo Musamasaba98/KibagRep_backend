@@ -48,6 +48,34 @@ export const RejectClaimSchema = z.object({
   note: z.string().max(1000).optional(),
 });
 
+// ─── Missed Visit ─────────────────────────────────────────────────────────────
+export const LogMissedSchema = z.object({
+  doctor_id:    z.string().uuid("doctor_id must be a valid UUID"),
+  visit_status: z.enum(["MISSED", "RESCHEDULED", "SKIPPED"]),
+  miss_reason:  z.string().max(500).optional(),
+  gps_lat:      z.number().min(-90).max(90).nullable().optional(),
+  gps_lng:      z.number().min(-180).max(180).nullable().optional(),
+});
+
+// ─── Pre-call Note ────────────────────────────────────────────────────────────
+export const PrecallNoteSchema = z.object({
+  precall_note: z.string().max(1000).nullable().optional(),
+});
+
+// ─── Competitor Intelligence ──────────────────────────────────────────────────
+export const LogCompetitorSchema = z.object({
+  competitor_company:  z.string().min(1).max(200),
+  competitor_brand:    z.string().min(1).max(200),
+  competitor_sku:      z.string().max(200).optional(),
+  is_listed:           z.boolean().optional().default(false),
+  price_to_trade:      z.number().positive().optional(),
+  price_to_consumer:   z.number().positive().optional(),
+  stock_quantity:      z.number().int().min(0).optional(),
+  notes:               z.string().max(2000).optional(),
+  doctor_id:           z.string().uuid().optional(),
+  pharmacy_id:         z.string().uuid().optional(),
+});
+
 // ─── Doctor Tier Classification ───────────────────────────────────────────────
 export const SetDoctorTierSchema = z.object({
   tier:            z.enum(["A", "B", "C"]),

@@ -23,6 +23,8 @@ import tourPlanRouter from "./src/routes/tourplan.route.js";
 import territoryRouter from "./src/routes/territory.route.js";
 import supervisorRouter from "./src/routes/supervisor.route.js";
 import targetRouter from "./src/routes/target.route.js";
+import competitorRouter from "./src/routes/competitor.route.js";
+import libraryRouter from "./src/routes/library.route.js";
 import { notFound, errorHandler } from "./src/middleware/error.middleware.js";
 
 const app = express();
@@ -72,6 +74,12 @@ app.use("/api/supervisor", supervisorRouter);
 
 // Sales targets (set by management, visible to reps)
 app.use("/api/target", targetRouter);
+
+// Competitor intelligence
+app.use("/api/competitor", competitorRouter);
+
+// E-detailing library
+app.use("/api/library", libraryRouter);
 
 // Legacy report generator
 app.use("/api/report", reportRouter);
