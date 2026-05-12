@@ -180,6 +180,35 @@ export const changePassword = asyncHandler(async (req, res) => {
   res.json({ success: true, message: "Password updated successfully" });
 });
 
+// GET /api/user/all — all platform users with optional search/role/company filters (SUPER_ADMIN)
+export const getAllPlatformUsers = asyncHandler(async (req, res) => {
+  const { q, role, company_id } = req.query;
+  const where = {};
+  if (q?.trim()) {
+    where.OR = [
+      { firstname: { contains: q.trim(), mode: "insensitive" } },
+      { lastname:  { contains: q.trim(), mode: "insensitive" } },
+      { email:     { contains: q.trim(), mode: "insensitive" } },
+      { username:  { contains: q.trim(), mode: "insensitive" } },
+    ];
+  }
+  if (role) where.role = role;
+  if (company_id === "unassigned") where.company_id = null;
+  else if (company_id) where.company_id = company_id;
+
+  const users = await prisma.user.findMany({
+    where,
+    select: {
+      id: true, username: true, firstname: true, lastname: true,
+      role: true, email: true, date_of_joining: true,
+      company: { select: { id: true, company_name: true } },
+    },
+    orderBy: { date_of_joining: "desc" },
+    take: 200,
+  });
+  res.json({ success: true, data: users });
+});
+
 // GET /api/user/unassigned — users with no company (SUPER_ADMIN)
 export const getUnassignedUsers = asyncHandler(async (req, res) => {
   const users = await prisma.user.findMany({

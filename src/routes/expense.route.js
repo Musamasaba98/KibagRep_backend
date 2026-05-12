@@ -21,7 +21,7 @@ router.use(protect);
 // Static routes — must come before /:id
 router.get("/my", getMyClaims);
 router.post("/create", validate(CreateClaimSchema), createClaim);
-router.get("/pending", requireRole(["Supervisor", "Manager", "SUPER_ADMIN"]), getPendingClaims);
+router.get("/pending", requireRole(["Supervisor", "Manager", "SALES_ADMIN", "SUPER_ADMIN"]), getPendingClaims);
 
 // Dynamic /:id routes
 router.get("/:id", getClaim);

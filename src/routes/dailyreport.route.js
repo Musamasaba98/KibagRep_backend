@@ -28,7 +28,7 @@ router.get("/observers", getCompanyObservers);
 // Supervisor static routes — MUST come before /:id
 router.get("/company", requireRole(["Supervisor", "Manager", "COUNTRY_MGR", "SALES_ADMIN", "SUPER_ADMIN"]), getCompanyReports);
 router.get("/jfw", getJfwReports);
-router.get("/pending", requireRole(["Supervisor", "Manager", "COUNTRY_MGR", "SUPER_ADMIN"]), getPendingReports);
+router.get("/pending", requireRole(["Supervisor", "Manager", "COUNTRY_MGR", "SALES_ADMIN", "SUPER_ADMIN"]), getPendingReports);
 
 // Dynamic /:id routes
 router.get("/:id/activities", requireRole(["Supervisor", "Manager", "COUNTRY_MGR", "SUPER_ADMIN"]), getReportActivities);

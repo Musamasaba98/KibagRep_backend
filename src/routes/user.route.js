@@ -10,6 +10,7 @@ import {
   updateCompanyUser,
   removeUserFromCompany,
   getUnassignedUsers,
+  getAllPlatformUsers,
   forgotPassword,
   resetPassword,
   adminResetPassword,
@@ -29,6 +30,7 @@ router.post("/admin-reset", protect, requireRole("SUPER_ADMIN","SALES_ADMIN","CO
 
 // User search (any authenticated user)
 router.get("/search", protect, searchByUsername);
+router.get("/all", protect, requireRole("SUPER_ADMIN"), getAllPlatformUsers);
 router.get("/unassigned", protect, requireRole("SUPER_ADMIN"), getUnassignedUsers);
 
 // Company user management
