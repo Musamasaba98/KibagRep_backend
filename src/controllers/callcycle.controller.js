@@ -61,9 +61,9 @@ export const addCycleItem = asyncHandler(async (req, res) => {
     cycle = await prisma.callCycle.create({ data: { user_id: userId, month, year } });
   }
 
-  if (cycle.status === "LOCKED") {
+  if (cycle.status === "LOCKED" || cycle.status === "APPROVED") {
     res.status(403);
-    throw new Error("Cycle is locked — contact your supervisor to make changes");
+    throw new Error("Cycle is approved — contact your supervisor to make changes");
   }
 
   const freqMap = { A: 4, B: 2, C: 1 };
@@ -100,9 +100,9 @@ export const removeCycleItem = asyncHandler(async (req, res) => {
     res.status(403);
     throw new Error("Not your cycle");
   }
-  if (item.cycle.status === "LOCKED") {
+  if (item.cycle.status === "LOCKED" || item.cycle.status === "APPROVED") {
     res.status(403);
-    throw new Error("Cycle is locked — contact your supervisor");
+    throw new Error("Cycle is approved — contact your supervisor");
   }
 
   await prisma.callCycleItem.delete({ where: { id: itemId } });
@@ -161,7 +161,16 @@ export const getPendingCycles = asyncHandler(async (req, res) => {
     },
     include: {
       user: { select: { id: true, firstname: true, lastname: true, role: true } },
-      _count: { select: { items: true } },
+      items: {
+        select: {
+          id: true,
+          tier: true,
+          frequency: true,
+          visits_done: true,
+          doctor: { select: { doctor_name: true, speciality: true, location: true, town: true } },
+        },
+        orderBy: [{ tier: "asc" }],
+      },
     },
     orderBy: { created_at: "desc" },
   });
@@ -180,10 +189,10 @@ export const approveCycle = asyncHandler(async (req, res) => {
   const updated = await prisma.callCycle.update({
     where: { id },
     data: {
-      status: "LOCKED",
+      status: "APPROVED",
       approved_by: req.user.id,
       approved_at: new Date(),
-      locked_at: new Date(),
+      review_note: null,
     },
   });
 
@@ -201,10 +210,10 @@ export const rejectCycle = asyncHandler(async (req, res) => {
 
   const updated = await prisma.callCycle.update({
     where: { id },
-    data: { status: "DRAFT" },
+    data: { status: "DRAFT", review_note: note ?? null },
   });
 
-  res.status(200).json({ success: true, data: updated, note: note ?? null });
+  res.status(200).json({ success: true, data: updated });
 });
 
 // PATCH /api/cycle/current/items/:itemId/precall — set pre-call note for a cycle doctor

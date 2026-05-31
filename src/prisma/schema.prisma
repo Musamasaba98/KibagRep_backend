@@ -275,17 +275,20 @@ model DoctorActivity {
 }
 
 model PharmacyActivity {
-  id                String   @id @default(uuid())
-  user              User     @relation(fields: [user_id], references: [id])
-  user_id           String
-  pharmacy          Pharmacy @relation(fields: [pharmacy_id], references: [id])
-  pharmacy_id       String
-  date              DateTime @default(now())
-  products_in_stock Product[]
-  stock_noted       Json?
-  outcome           String?
-  gps_lat           Float?
-  gps_lng           Float?
+  id                      String    @id @default(uuid())
+  user                    User      @relation(fields: [user_id], references: [id])
+  user_id                 String
+  pharmacy                Pharmacy  @relation(fields: [pharmacy_id], references: [id])
+  pharmacy_id             String
+  date                    DateTime  @default(now())
+  products_in_stock       Product[]
+  stock_noted             Json?
+  outcome                 String?
+  gps_lat                 Float?
+  gps_lng                 Float?
+  stockTrackingDate       DateTime?
+  stockTrackingPharmacy_id String?
+  stockTrackingProduct_id  String?
 }
 
 // The person at a pharmacy or hospital who handles orders for products.
@@ -398,6 +401,7 @@ model CallCycle {
   approved_by String?
   approved_at DateTime?
   locked_at   DateTime?
+  review_note String?
   items       CallCycleItem[]
   created_at  DateTime        @default(now())
   updated_at  DateTime?       @updatedAt

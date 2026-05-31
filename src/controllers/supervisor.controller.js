@@ -4,6 +4,7 @@ import asyncHandler from "express-async-handler";
 // GET /api/supervisor/team-performance
 // Returns per-rep KPIs for the supervisor's company: visits, cycle adherence,
 // GPS anomalies, days since last visit, pending items.
+// Uses batched groupBy queries (8 fixed DB round-trips regardless of team size).
 export const getTeamPerformance = asyncHandler(async (req, res) => {
   const { company_id } = req.user;
 
@@ -15,79 +16,104 @@ export const getTeamPerformance = asyncHandler(async (req, res) => {
   const year       = now.getFullYear();
 
   const reps = await prisma.user.findMany({
-    where:  { company_id, role: "MedicalRep" },
-    select: { id: true, firstname: true, lastname: true, role: true },
+    where:   { company_id, role: "MedicalRep" },
+    select:  { id: true, firstname: true, lastname: true, role: true },
     orderBy: { firstname: "asc" },
   });
 
-  const data = await Promise.all(
-    reps.map(async (rep) => {
-      const [
-        visitsToday,
-        visitsWeek,
-        visitsMonth,
-        lastActivity,
-        gpsCount,
-        pendingReports,
-        pendingExpenses,
-        cycle,
-      ] = await Promise.all([
-        prisma.doctorActivity.count({
-          where: { user_id: rep.id, date: { gte: todayStart } },
-        }),
-        prisma.doctorActivity.count({
-          where: { user_id: rep.id, date: { gte: weekAgo } },
-        }),
-        prisma.doctorActivity.count({
-          where: { user_id: rep.id, date: { gte: monthStart } },
-        }),
-        prisma.doctorActivity.findFirst({
-          where:   { user_id: rep.id },
-          orderBy: { date: "desc" },
-          select:  { date: true },
-        }),
-        prisma.doctorActivity.count({
-          where: { user_id: rep.id, gps_anomaly: true, date: { gte: weekAgo } },
-        }),
-        prisma.dailyReport.count({
-          where: { user_id: rep.id, status: "SUBMITTED" },
-        }),
-        prisma.expenseClaim.count({
-          where: { user_id: rep.id, status: "SUBMITTED" },
-        }),
-        prisma.callCycle.findUnique({
-          where: { user_id_month_year: { user_id: rep.id, month, year } },
-          include: {
-            items: { select: { frequency: true, visits_done: true } },
-          },
-        }),
-      ]);
+  if (reps.length === 0) return res.json({ success: true, data: [] });
 
-      const totalTarget = cycle?.items.reduce((s, i) => s + i.frequency, 0) ?? 0;
-      const totalDone   = cycle?.items.reduce((s, i) => s + i.visits_done, 0) ?? 0;
-      const cycleAdherencePct =
-        totalTarget > 0 ? Math.round((totalDone / totalTarget) * 100) : null;
+  const repIds = reps.map((r) => r.id);
 
-      const daysSinceLast = lastActivity
-        ? Math.floor((Date.now() - new Date(lastActivity.date).getTime()) / 86_400_000)
-        : null;
+  // 8 queries total — independent of team size
+  const [
+    todayCounts,
+    weekCounts,
+    monthCounts,
+    lastActivities,
+    gpsCounts,
+    pendingReportCounts,
+    pendingExpenseCounts,
+    cycles,
+  ] = await Promise.all([
+    prisma.doctorActivity.groupBy({
+      by: ["user_id"],
+      where: { user_id: { in: repIds }, date: { gte: todayStart } },
+      _count: { id: true },
+    }),
+    prisma.doctorActivity.groupBy({
+      by: ["user_id"],
+      where: { user_id: { in: repIds }, date: { gte: weekAgo } },
+      _count: { id: true },
+    }),
+    prisma.doctorActivity.groupBy({
+      by: ["user_id"],
+      where: { user_id: { in: repIds }, date: { gte: monthStart } },
+      _count: { id: true },
+    }),
+    prisma.doctorActivity.groupBy({
+      by: ["user_id"],
+      where: { user_id: { in: repIds } },
+      _max: { date: true },
+    }),
+    prisma.doctorActivity.groupBy({
+      by: ["user_id"],
+      where: { user_id: { in: repIds }, gps_anomaly: true, date: { gte: weekAgo } },
+      _count: { id: true },
+    }),
+    prisma.dailyReport.groupBy({
+      by: ["user_id"],
+      where: { user_id: { in: repIds }, status: "SUBMITTED" },
+      _count: { id: true },
+    }),
+    prisma.expenseClaim.groupBy({
+      by: ["user_id"],
+      where: { user_id: { in: repIds }, status: "SUBMITTED" },
+      _count: { id: true },
+    }),
+    prisma.callCycle.findMany({
+      where:   { user_id: { in: repIds }, month, year },
+      include: { items: { select: { frequency: true, visits_done: true } } },
+    }),
+  ]);
 
-      return {
-        user: rep,
-        visits_today:          visitsToday,
-        visits_this_week:      visitsWeek,
-        visits_this_month:     visitsMonth,
-        cycle_visits_done:     totalDone,
-        cycle_total_target:    totalTarget,
-        cycle_adherence_pct:   cycleAdherencePct,
-        last_visit_date:       lastActivity?.date ?? null,
-        days_since_last_visit: daysSinceLast,
-        gps_anomaly_count_week: gpsCount,
-        pending_reports:       pendingReports,
-        pending_expenses:      pendingExpenses,
-      };
-    })
-  );
+  // Build O(1) lookup maps
+  const mk = (arr, key, val) => Object.fromEntries(arr.map((r) => [r[key], val(r)]));
+  const todayMap   = mk(todayCounts,         "user_id", (r) => r._count.id);
+  const weekMap    = mk(weekCounts,           "user_id", (r) => r._count.id);
+  const monthMap   = mk(monthCounts,          "user_id", (r) => r._count.id);
+  const lastMap    = mk(lastActivities,       "user_id", (r) => r._max.date);
+  const gpsMap     = mk(gpsCounts,            "user_id", (r) => r._count.id);
+  const reportMap  = mk(pendingReportCounts,  "user_id", (r) => r._count.id);
+  const expenseMap = mk(pendingExpenseCounts, "user_id", (r) => r._count.id);
+  const cycleMap   = mk(cycles,              "user_id", (r) => r);
+
+  const data = reps.map((rep) => {
+    const cycle       = cycleMap[rep.id];
+    const totalTarget = cycle?.items.reduce((s, i) => s + i.frequency, 0) ?? 0;
+    const totalDone   = cycle?.items.reduce((s, i) => s + i.visits_done, 0) ?? 0;
+    const cycleAdherencePct = totalTarget > 0 ? Math.round((totalDone / totalTarget) * 100) : null;
+
+    const lastDate      = lastMap[rep.id] ?? null;
+    const daysSinceLast = lastDate
+      ? Math.floor((Date.now() - new Date(lastDate).getTime()) / 86_400_000)
+      : null;
+
+    return {
+      user:                    rep,
+      visits_today:            todayMap[rep.id]   ?? 0,
+      visits_this_week:        weekMap[rep.id]    ?? 0,
+      visits_this_month:       monthMap[rep.id]   ?? 0,
+      cycle_visits_done:       totalDone,
+      cycle_total_target:      totalTarget,
+      cycle_adherence_pct:     cycleAdherencePct,
+      last_visit_date:         lastDate,
+      days_since_last_visit:   daysSinceLast,
+      gps_anomaly_count_week:  gpsMap[rep.id]    ?? 0,
+      pending_reports:         reportMap[rep.id]  ?? 0,
+      pending_expenses:        expenseMap[rep.id] ?? 0,
+    };
+  });
 
   res.json({ success: true, data });
 });
