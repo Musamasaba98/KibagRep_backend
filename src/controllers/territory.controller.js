@@ -59,14 +59,20 @@ export const getMyTerritory = asyncHandler(async (req, res) => {
 
 // ─── POST /api/territory ──────────────────────────────────────────────────────
 export const createTerritory = asyncHandler(async (req, res) => {
-  const { name, description, region } = req.body;
+  const { name, description, region, territory_type } = req.body;
   const companyId = req.user.company_id;
 
   if (!name?.trim()) return res.status(400).json({ success: false, error: "name is required" });
   if (!companyId)     return res.status(400).json({ success: false, error: "No company assigned" });
 
   const territory = await prisma.territory.create({
-    data: { name: name.trim(), description: description ?? null, region: region ?? null, company_id: companyId },
+    data: {
+      name: name.trim(),
+      description: description ?? null,
+      region: region ?? null,
+      territory_type: territory_type ?? "TOWN",
+      company_id: companyId,
+    },
     include: TERRITORY_INCLUDE,
   });
 
@@ -76,7 +82,7 @@ export const createTerritory = asyncHandler(async (req, res) => {
 // ─── PUT /api/territory/:id ───────────────────────────────────────────────────
 export const updateTerritory = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { name, description, region } = req.body;
+  const { name, description, region, territory_type } = req.body;
   const companyId = req.user.company_id;
 
   const existing = await prisma.territory.findUnique({ where: { id } });
@@ -87,9 +93,10 @@ export const updateTerritory = asyncHandler(async (req, res) => {
   const territory = await prisma.territory.update({
     where: { id },
     data: {
-      name: name?.trim() ?? existing.name,
-      description: description ?? existing.description,
-      region: region ?? existing.region,
+      name:           name?.trim()     ?? existing.name,
+      description:    description      ?? existing.description,
+      region:         region           ?? existing.region,
+      territory_type: territory_type   ?? existing.territory_type,
     },
     include: TERRITORY_INCLUDE,
   });

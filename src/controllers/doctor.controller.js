@@ -29,9 +29,112 @@ export const createDoctor = asyncHandler(async (req, res, next) => {
       .json({ error: "Internal Server Error", message: err.message });
   }
 });
-export const getDoctor = getOne("doctor");
 export const deleteDoctor = deleteOne("doctor");
-export const updateDoctor = updateOne("doctor");
+
+// GET /api/doctor/:id — full doctor record including linked facilities
+export const getDoctor = asyncHandler(async (req, res) => {
+  const doctor = await prisma.doctor.findUnique({
+    where: { id: req.params.id },
+    include: {
+      work_facilities: {
+        include: {
+          facility: {
+            select: { id: true, name: true, location: true, town: true, facility_type: true, latitude: true, longitude: true },
+          },
+        },
+        orderBy: { is_primary: "desc" },
+      },
+    },
+  });
+  if (!doctor) {
+    res.status(404);
+    throw new Error("Doctor not found");
+  }
+  res.json({ success: true, data: doctor });
+});
+
+// PUT /api/doctor/:id — update scalar fields only (no relation handling)
+export const updateDoctor = asyncHandler(async (req, res) => {
+  const { doctor_name, speciality, cadre, location, town, contact,
+          license_number, prescribing_level, gps_lat, gps_lng } = req.body;
+
+  const updated = await prisma.doctor.update({
+    where: { id: req.params.id },
+    data: {
+      ...(doctor_name       !== undefined && { doctor_name }),
+      ...(speciality        !== undefined && { speciality }),
+      ...(cadre             !== undefined && { cadre }),
+      ...(location          !== undefined && { location }),
+      ...(town              !== undefined && { town }),
+      ...(contact           !== undefined && { contact }),
+      ...(license_number    !== undefined && { license_number }),
+      ...(prescribing_level !== undefined && { prescribing_level }),
+      ...(gps_lat           !== undefined && { gps_lat: gps_lat === null ? null : parseFloat(gps_lat) }),
+      ...(gps_lng           !== undefined && { gps_lng: gps_lng === null ? null : parseFloat(gps_lng) }),
+    },
+    include: {
+      work_facilities: {
+        include: { facility: { select: { id: true, name: true, town: true } } },
+      },
+    },
+  });
+  res.json({ success: true, data: updated });
+});
+
+// POST /api/doctor/:id/facilities — link a facility to this doctor
+export const addDoctorFacility = asyncHandler(async (req, res) => {
+  const { facility_id, is_primary = false } = req.body;
+  const doctor_id = req.params.id;
+
+  if (!facility_id) { res.status(400); throw new Error("facility_id is required"); }
+
+  // If setting as primary, unset any existing primary first
+  if (is_primary) {
+    await prisma.doctorFacility.updateMany({
+      where: { doctor_id },
+      data: { is_primary: false },
+    });
+  }
+
+  const link = await prisma.doctorFacility.upsert({
+    where: { doctor_id_facility_id: { doctor_id, facility_id } },
+    update: { is_primary },
+    create: { doctor_id, facility_id, is_primary },
+    include: { facility: { select: { id: true, name: true, location: true, town: true, latitude: true, longitude: true } } },
+  });
+
+  res.status(201).json({ success: true, data: link });
+});
+
+// PUT /api/doctor/:id/facilities/:facilityId — set/unset primary
+export const setFacilityPrimary = asyncHandler(async (req, res) => {
+  const { id: doctor_id, facilityId: facility_id } = req.params;
+  const { is_primary } = req.body;
+
+  if (is_primary) {
+    await prisma.doctorFacility.updateMany({
+      where: { doctor_id },
+      data: { is_primary: false },
+    });
+  }
+
+  const updated = await prisma.doctorFacility.update({
+    where: { doctor_id_facility_id: { doctor_id, facility_id } },
+    data: { is_primary },
+    include: { facility: { select: { id: true, name: true, location: true, town: true } } },
+  });
+
+  res.json({ success: true, data: updated });
+});
+
+// DELETE /api/doctor/:id/facilities/:facilityId — unlink a facility from this doctor
+export const removeDoctorFacility = asyncHandler(async (req, res) => {
+  const { id: doctor_id, facilityId: facility_id } = req.params;
+  await prisma.doctorFacility.delete({
+    where: { doctor_id_facility_id: { doctor_id, facility_id } },
+  });
+  res.json({ success: true });
+});
 
 // GET /api/doctor — doctor list
 // ?scope=company (default) → only doctors approved for the user's company

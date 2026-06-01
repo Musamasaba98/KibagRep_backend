@@ -23,9 +23,12 @@ model User {
   longitude            Float?
   company              Company?             @relation(fields: [company_id], references: [id])
   company_id           String?
-  territory            Territory?           @relation("UserTerritory", fields: [territory_id], references: [id])
-  territory_id         String?
-  team                 Team?                @relation(fields: [team_id], references: [id])
+  territory              Territory?           @relation("UserTerritory", fields: [territory_id], references: [id])
+  territory_id           String?
+  // Optional: rep may cover a second territory (e.g. an upcountry block one week per month)
+  secondary_territory    Territory?           @relation("UserSecondaryTerritory", fields: [secondary_territory_id], references: [id])
+  secondary_territory_id String?
+  team                   Team?               @relation(fields: [team_id], references: [id])
   team_id              String?
   sample_distributions SampleDistribution[]
   pharmacy_activity    PharmacyActivity[]
@@ -51,6 +54,7 @@ model User {
   sales_targets        SalesTarget[]
   product_targets      ProductTarget[]
   competitor_intel     CompetitorIntel[]
+  field_events         FieldEvent[]
 }
 
 model SupervisorProfile {
@@ -130,6 +134,7 @@ model Company {
   drug_catalog_maps      DrugCatalogProductMap[]
   competitor_intel       CompetitorIntel[]
   product_literature     ProductLiterature[]
+  field_events           FieldEvent[]
   is_active            Boolean                @default(true)
   date_of_joining      DateTime               @default(now())
   updatedAt            DateTime?              @updatedAt
@@ -157,6 +162,7 @@ model Product {
   drug_catalog_maps        DrugCatalogProductMap[]
   product_targets          ProductTarget[]
   literature               ProductLiterature[]
+  field_events             FieldEvent[]
 }
 
 model Doctor {
@@ -185,6 +191,7 @@ model Doctor {
   prescribing_level    PrescribingLevel?
   dispense_events      DispenseEvent[]
   competitor_intel     CompetitorIntel[]
+  field_events         FieldEvent[]
 }
 
 model Pharmacy {
@@ -389,6 +396,7 @@ model Facility {
   town                 String?
   facility_type        String?
   dispense_events      DispenseEvent[]
+  field_events         FieldEvent[]
 }
 
 model CallCycle {
@@ -410,15 +418,17 @@ model CallCycle {
 }
 
 model CallCycleItem {
-  id           String     @id @default(uuid())
-  cycle        CallCycle  @relation(fields: [cycle_id], references: [id])
+  id           String         @id @default(uuid())
+  cycle        CallCycle      @relation(fields: [cycle_id], references: [id])
   cycle_id     String
-  doctor       Doctor     @relation(fields: [doctor_id], references: [id])
+  doctor       Doctor         @relation(fields: [doctor_id], references: [id])
   doctor_id    String
-  tier         DoctorTier @default(B)
+  tier         DoctorTier     @default(B)
+  // KBL = Key Business List (priority), BL = Business List (regular), FOCUS = product-specific focus
+  list_type    DoctorListType @default(BL)
   frequency    Int
-  visits_done  Int        @default(0)
-  precall_note String?    // planning notes before visiting this doctor
+  visits_done  Int            @default(0)
+  precall_note String?        // planning notes before visiting this doctor
 
   @@unique([cycle_id, doctor_id])
 }
@@ -515,6 +525,12 @@ model DailyReport {
   reviewed_at     DateTime?
   review_note     String?
   jfw_observer_id String?      // ID of supervisor/manager who joined fieldwork today
+  // JFW coaching score — filled by the observer after the joint field day
+  jfw_score       Json?        // { communication, product_knowledge, hcp_engagement, sample_management, professionalism }
+  jfw_overall     Float?       // average of criteria scores (1–5)
+  jfw_notes       String?      // observer's coaching narrative
+  jfw_scored_by   String?      // user_id of the supervisor who submitted the score
+  jfw_scored_at   DateTime?
   created_at      DateTime     @default(now())
   updated_at      DateTime?    @updatedAt
 
@@ -604,16 +620,18 @@ enum TourPlanStatus {
 }
 
 model Territory {
-  id          String              @id @default(uuid())
-  name        String              // e.g. "Kampala Central"
-  description String?
-  region      String?             // e.g. "Central", "Eastern", "Western"
-  company     Company             @relation(fields: [company_id], references: [id])
-  company_id  String
-  facilities  TerritoryFacility[]
-  reps        User[]              @relation("UserTerritory")
-  created_at  DateTime            @default(now())
-  updated_at  DateTime?           @updatedAt
+  id             String              @id @default(uuid())
+  name           String              // e.g. "Kampala Central", "Eastern Mbale Block"
+  description    String?
+  region         String?             // e.g. "Central", "Eastern", "Western", "Northern"
+  territory_type TerritoryType       @default(TOWN)
+  company        Company             @relation(fields: [company_id], references: [id])
+  company_id     String
+  facilities     TerritoryFacility[]
+  reps           User[]              @relation("UserTerritory")
+  secondary_reps User[]              @relation("UserSecondaryTerritory")
+  created_at     DateTime            @default(now())
+  updated_at     DateTime?           @updatedAt
 }
 
 model TerritoryFacility {
@@ -706,10 +724,12 @@ enum ExpenseCategory {
 model CompanyDoctor {
   company_id  String
   doctor_id   String
-  company     Company  @relation(fields: [company_id], references: [id])
-  doctor      Doctor   @relation(fields: [doctor_id], references: [id])
-  added_by    String?  // user_id of the supervisor/manager who approved
-  added_at    DateTime @default(now())
+  company     Company         @relation(fields: [company_id], references: [id])
+  doctor      Doctor          @relation(fields: [doctor_id], references: [id])
+  // KBL = Key Business List (priority), BL = Business List (regular), FOCUS = product-specific focus
+  list_type   DoctorListType  @default(BL)
+  added_by    String?         // user_id of the supervisor/manager who approved
+  added_at    DateTime        @default(now())
 
   @@id([company_id, doctor_id])
 }
@@ -1088,4 +1108,74 @@ model ProductTarget {
   updated_at   DateTime @updatedAt
 
   @@unique([user_id, product_id, month, year])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FIELD EVENTS — OPD Breakfasts, CME evenings, hospital rounds, etc.
+// Planned by rep/supervisor, executed by rep, tracked against budget.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model FieldEvent {
+  id              String           @id @default(uuid())
+  user            User             @relation(fields: [user_id], references: [id])
+  user_id         String
+  company         Company          @relation(fields: [company_id], references: [id])
+  company_id      String
+  event_type      FieldEventType   @default(OPD_BREAKFAST)
+  title           String
+  // Target HCP (can be individual doctor or a group at a facility)
+  doctor          Doctor?          @relation(fields: [doctor_id], references: [id])
+  doctor_id       String?
+  facility        Facility?        @relation(fields: [facility_id], references: [id])
+  facility_id     String?
+  // The brand/product being promoted at this event
+  product         Product?         @relation(fields: [product_id], references: [id])
+  product_id      String?
+  // Budget and execution tracking (matches W3 OPD columns)
+  budget_ugx      Float?           // amount planned (UGX)
+  planned_date    DateTime?
+  planned_count   Int              @default(1)   // how many times planned per month
+  executed_date   DateTime?
+  executed_count  Int              @default(0)   // how many times actually done
+  actual_spend    Float?           // total expenditure (UGX)
+  attendees_count Int?             // number of HCPs who attended
+  status          FieldEventStatus @default(PLANNED)
+  notes           String?
+  created_at      DateTime         @default(now())
+  updated_at      DateTime?        @updatedAt
+
+  @@index([company_id, planned_date])
+  @@index([user_id, status])
+}
+
+enum FieldEventType {
+  OPD_BREAKFAST      // OPD breakfast meeting at a facility
+  CME_EVENT          // Continuing Medical Education evening/session
+  PRODUCT_LAUNCH     // New product launch presentation
+  PHARMACY_WORKSHOP  // Group session with pharmacy staff
+  HOSPITAL_ROUND     // Scheduled hospital ward round with a doctor
+  OTHER
+}
+
+enum FieldEventStatus {
+  PLANNED
+  EXECUTED
+  PARTIALLY_DONE
+  CANCELLED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NEW ENUMS
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum TerritoryType {
+  TOWN       // urban/central territory (e.g. Kampala CBD, Ntinda)
+  UPCOUNTRY  // rural/distant territory (e.g. Mbale Block, Mbarara)
+  REGIONAL   // mixed — covers a broad region that includes both urban and rural
+}
+
+enum DoctorListType {
+  KBL    // Key Business List — highest priority, seen most frequently
+  BL     // Business List — regular coverage
+  FOCUS  // Product-specific focus — targeted for a particular brand push
 }

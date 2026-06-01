@@ -13,6 +13,7 @@ import {
   getReportActivities,
   getCompanyReports,
   getJfwReports,
+  submitJfwScore,
 } from "../controllers/dailyreport.controller.js";
 
 const router = express.Router();
@@ -32,7 +33,8 @@ router.get("/pending", requireRole(["Supervisor", "Manager", "COUNTRY_MGR", "SAL
 
 // Dynamic /:id routes
 router.get("/:id/activities", requireRole(["Supervisor", "Manager", "COUNTRY_MGR", "SUPER_ADMIN"]), getReportActivities);
-router.put("/:id/approve", requireRole(["Supervisor", "Manager", "COUNTRY_MGR", "SUPER_ADMIN"]), approveReport);
-router.put("/:id/reject", requireRole(["Supervisor", "Manager", "COUNTRY_MGR", "SUPER_ADMIN"]), validate(RejectReportSchema), rejectReport);
+router.put("/:id/approve",    requireRole(["Supervisor", "Manager", "COUNTRY_MGR", "SUPER_ADMIN"]), approveReport);
+router.put("/:id/reject",     requireRole(["Supervisor", "Manager", "COUNTRY_MGR", "SUPER_ADMIN"]), validate(RejectReportSchema), rejectReport);
+router.post("/:id/jfw-score", requireRole(["Supervisor", "Manager", "COUNTRY_MGR", "SUPER_ADMIN"]), submitJfwScore);
 
 export default router;

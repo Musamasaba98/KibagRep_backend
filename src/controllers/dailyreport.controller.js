@@ -309,3 +309,44 @@ export const getJfwReports = asyncHandler(async (req, res) => {
 
   res.status(200).json({ success: true, data: reports });
 });
+
+// POST /api/daily-report/:id/jfw-score — supervisor submits coaching score
+// Body: { criteria: { communication, product_knowledge, ... }, notes, overall_score }
+export const submitJfwScore = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { criteria, notes, overall_score } = req.body;
+
+  if (!criteria || typeof criteria !== 'object') {
+    res.status(400);
+    throw new Error('criteria object is required');
+  }
+
+  // Confirm this report has the current user as JFW observer
+  const report = await prisma.dailyReport.findUnique({
+    where: { id },
+    select: { id: true, jfw_observer_id: true, user_id: true },
+  });
+
+  if (!report) {
+    res.status(404);
+    throw new Error('Report not found');
+  }
+
+  if (report.jfw_observer_id !== req.user.id) {
+    res.status(403);
+    throw new Error('You are not the JFW observer for this report');
+  }
+
+  const updated = await prisma.dailyReport.update({
+    where: { id },
+    data: {
+      jfw_score:     criteria,
+      jfw_overall:   overall_score ?? null,
+      jfw_notes:     notes ?? null,
+      jfw_scored_by: req.user.id,
+      jfw_scored_at: new Date(),
+    },
+  });
+
+  res.status(200).json({ success: true, data: updated });
+});

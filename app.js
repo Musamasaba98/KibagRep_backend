@@ -25,6 +25,7 @@ import supervisorRouter from "./src/routes/supervisor.route.js";
 import targetRouter from "./src/routes/target.route.js";
 import competitorRouter from "./src/routes/competitor.route.js";
 import libraryRouter from "./src/routes/library.route.js";
+import fieldEventRouter from "./src/routes/fieldevent.route.js";
 import { notFound, errorHandler } from "./src/middleware/error.middleware.js";
 
 const app = express();
@@ -80,6 +81,9 @@ app.use("/api/competitor", competitorRouter);
 
 // E-detailing library
 app.use("/api/library", libraryRouter);
+
+// Field events (OPD breakfasts, CME, product launches, etc.)
+app.use("/api/field-events", fieldEventRouter);
 
 // Legacy report generator
 app.use("/api/report", reportRouter);

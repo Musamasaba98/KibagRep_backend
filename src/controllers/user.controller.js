@@ -132,7 +132,7 @@ export const addUserToCompany = asyncHandler(async (req, res) => {
 // PUT /api/user/company/:userId — update role or team for a company member
 export const updateCompanyUser = asyncHandler(async (req, res) => {
   const { userId } = req.params;
-  const { role, team_id } = req.body;
+  const { role, team_id, territory_id, secondary_territory_id } = req.body;
   const actor = req.user;
   const target = await prisma.user.findUnique({ where: { id: userId } });
   if (!target || (target.company_id !== actor.company_id && actor.role !== "SUPER_ADMIN")) {
@@ -141,10 +141,17 @@ export const updateCompanyUser = asyncHandler(async (req, res) => {
   const updated = await prisma.user.update({
     where: { id: userId },
     data: {
-      ...(role !== undefined ? { role } : {}),
-      ...(team_id !== undefined ? { team_id: team_id || null } : {}),
+      ...(role                     !== undefined && { role }),
+      ...(team_id                  !== undefined && { team_id:                  team_id                  || null }),
+      ...(territory_id             !== undefined && { territory_id:             territory_id             || null }),
+      ...(secondary_territory_id   !== undefined && { secondary_territory_id:   secondary_territory_id   || null }),
     },
-    select: { id: true, username: true, firstname: true, lastname: true, role: true, team: { select: { id: true, team_name: true } } },
+    select: {
+      id: true, username: true, firstname: true, lastname: true, role: true,
+      team:                { select: { id: true, team_name: true } },
+      territory:           { select: { id: true, name: true, territory_type: true, region: true } },
+      secondary_territory: { select: { id: true, name: true, territory_type: true, region: true } },
+    },
   });
   res.json({ success: true, data: updated });
 });

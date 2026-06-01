@@ -28,7 +28,7 @@ router.get("/:id", getClaim);
 router.post("/:id/items", validate(AddExpenseItemSchema), addItem);
 router.delete("/:id/items/:itemId", removeItem);
 router.put("/:id/submit", submitClaim);
-router.put("/:id/approve", requireRole(["Supervisor", "Manager", "SUPER_ADMIN"]), approveClaim);
-router.put("/:id/reject", requireRole(["Supervisor", "Manager", "SUPER_ADMIN"]), validate(RejectClaimSchema), rejectClaim);
+router.put("/:id/approve", requireRole(["Supervisor", "Manager", "SALES_ADMIN", "SUPER_ADMIN"]), approveClaim);
+router.put("/:id/reject", requireRole(["Supervisor", "Manager", "SALES_ADMIN", "SUPER_ADMIN"]), validate(RejectClaimSchema), rejectClaim);
 
 export default router;

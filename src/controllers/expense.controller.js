@@ -150,7 +150,7 @@ export const submitClaim = asyncHandler(async (req, res) => {
   const supervisors = await prisma.user.findMany({
     where: {
       company_id: req.user.company_id,
-      role: { in: ["Supervisor", "Manager", "SUPER_ADMIN"] },
+      role: { in: ["Supervisor", "Manager", "SALES_ADMIN", "SUPER_ADMIN"] },
     },
     select: { email: true },
   });

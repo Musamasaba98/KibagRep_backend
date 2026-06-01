@@ -55,9 +55,27 @@ export const createDoctorActivity = asyncHandler(async (req, res) => {
   }
   let gps_anomaly = false;
   if (gps_lat != null && gps_lng != null) {
-    const doctor = await prisma.doctor.findUnique({ where: { id: doctor_id }, select: { gps_lat: true, gps_lng: true } });
-    if (doctor?.gps_lat != null && doctor?.gps_lng != null) {
-      gps_anomaly = gpsDistanceMetres(gps_lat, gps_lng, doctor.gps_lat, doctor.gps_lng) > GPS_ANOMALY_THRESHOLD_M;
+    // Prefer the doctor's primary facility GPS (most accurate for visit location).
+    // Fall back to the doctor's own gps_lat/gps_lng if no facility has coordinates.
+    const doctor = await prisma.doctor.findUnique({
+      where: { id: doctor_id },
+      select: {
+        gps_lat: true,
+        gps_lng: true,
+        work_facilities: {
+          where: { is_primary: true },
+          include: { facility: { select: { latitude: true, longitude: true, name: true } } },
+          take: 1,
+        },
+      },
+    });
+
+    const primaryFacility = doctor?.work_facilities?.[0]?.facility;
+    const refLat = primaryFacility?.latitude  ?? doctor?.gps_lat;
+    const refLng = primaryFacility?.longitude ?? doctor?.gps_lng;
+
+    if (refLat != null && refLng != null) {
+      gps_anomaly = gpsDistanceMetres(gps_lat, gps_lng, refLat, refLng) > GPS_ANOMALY_THRESHOLD_M;
     }
   }
   const connectProducts = Array.isArray(products_detailed) ? products_detailed.map((id) => ({ id })) : [];
@@ -320,12 +338,21 @@ export const logNca = asyncHandler(async (req, res) => {
   if (gps_lat != null && gps_lng != null) {
     const doctor = await prisma.doctor.findUnique({
       where: { id: doctor_id },
-      select: { gps_lat: true, gps_lng: true },
+      select: {
+        gps_lat: true,
+        gps_lng: true,
+        work_facilities: {
+          where: { is_primary: true },
+          include: { facility: { select: { latitude: true, longitude: true } } },
+          take: 1,
+        },
+      },
     });
-    if (doctor?.gps_lat != null && doctor?.gps_lng != null) {
-      gps_anomaly =
-        gpsDistanceMetres(gps_lat, gps_lng, doctor.gps_lat, doctor.gps_lng) >
-        GPS_ANOMALY_THRESHOLD_M;
+    const primaryFacility = doctor?.work_facilities?.[0]?.facility;
+    const refLat = primaryFacility?.latitude  ?? doctor?.gps_lat;
+    const refLng = primaryFacility?.longitude ?? doctor?.gps_lng;
+    if (refLat != null && refLng != null) {
+      gps_anomaly = gpsDistanceMetres(gps_lat, gps_lng, refLat, refLng) > GPS_ANOMALY_THRESHOLD_M;
     }
   }
 

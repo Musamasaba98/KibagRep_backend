@@ -41,7 +41,7 @@ export const getCurrentCycle = asyncHandler(async (req, res) => {
 // POST /api/cycle/current/items — add a doctor to the current cycle
 export const addCycleItem = asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { doctor_id, tier = "B", frequency } = req.body;
+  const { doctor_id, tier = "B", list_type = "BL", frequency } = req.body;
 
   if (!doctor_id) {
     res.status(400);
@@ -72,6 +72,7 @@ export const addCycleItem = asyncHandler(async (req, res) => {
       cycle_id: cycle.id,
       doctor_id,
       tier,
+      list_type,
       frequency: frequency ?? freqMap[tier] ?? 2,
     },
     include: {
@@ -165,6 +166,7 @@ export const getPendingCycles = asyncHandler(async (req, res) => {
         select: {
           id: true,
           tier: true,
+          list_type: true,
           frequency: true,
           visits_done: true,
           doctor: { select: { doctor_name: true, speciality: true, location: true, town: true } },
