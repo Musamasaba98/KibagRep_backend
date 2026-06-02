@@ -269,7 +269,8 @@ export const getReportActivities = asyncHandler(async (req, res) => {
     prisma.pharmacyActivity.findMany({
       where: { user_id: report.user_id, date: { gte: start, lt: end } },
       include: {
-        pharmacy: { select: { id: true, pharmacy_name: true, location: true, town: true } },
+        pharmacy:          { select: { id: true, pharmacy_name: true, location: true, town: true, contact: true } },
+        products_in_stock: { select: { id: true, product_name: true } },
       },
       orderBy: { date: "asc" },
     }),
