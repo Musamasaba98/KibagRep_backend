@@ -3,10 +3,8 @@ import dotenv from 'dotenv'
 import "./src/cron/jobs.js";
 
 
-const result =dotenv.config()
-if (result.error) {
-    console.error('Error loading .env file:', result.error)
-}
+// Load .env in local dev — silently skip on Render where vars are injected by the platform
+dotenv.config({ quiet: true });
 
 const PORT=process.env.PORT||4000
 
