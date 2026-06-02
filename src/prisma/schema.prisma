@@ -30,6 +30,7 @@ model User {
   secondary_territory_id String?
   team                   Team?               @relation(fields: [team_id], references: [id])
   team_id              String?
+  supervised_teams       Team[]              @relation("TeamSupervisor")
   sample_distributions SampleDistribution[]
   pharmacy_activity    PharmacyActivity[]
   doctor_activity      DoctorActivity[]
@@ -135,6 +136,8 @@ model Company {
   competitor_intel       CompetitorIntel[]
   product_literature     ProductLiterature[]
   field_events           FieldEvent[]
+  stock_placement_targets StockPlacementTarget[]
+  teams                  Team[]
   is_active            Boolean                @default(true)
   date_of_joining      DateTime               @default(now())
   updatedAt            DateTime?              @updatedAt
@@ -163,6 +166,7 @@ model Product {
   product_targets          ProductTarget[]
   literature               ProductLiterature[]
   field_events             FieldEvent[]
+  stock_placement_targets  StockPlacementTarget[]
 }
 
 model Doctor {
@@ -216,16 +220,23 @@ model Pharmacy {
   dispense_rewards     DispenseReward[]
   daily_stats          PharmacyDailyStats[]
   competitor_intel     CompetitorIntel[]
+  stock_placement_targets StockPlacementTarget[]
 }
 
 model Team {
   id               String        @id @default(uuid())
   team_name        String
+  company          Company?      @relation(fields: [company_id], references: [id])
+  company_id       String?
   users            User[]
   team_products    TeamProduct[]
   monthly_plans    MonthlyPlan[]
+  supervisor       User?         @relation("TeamSupervisor", fields: [supervisor_id], references: [id])
+  supervisor_id    String?
   date_of_creation DateTime      @default(now())
   updatedAt        DateTime?     @updatedAt
+
+  @@index([company_id])
 }
 
 model TeamProduct {
@@ -1108,6 +1119,26 @@ model ProductTarget {
   updated_at   DateTime @updatedAt
 
   @@unique([user_id, product_id, month, year])
+}
+
+// Monthly units-per-SKU-per-outlet placement plan set by management
+model StockPlacementTarget {
+  id          String   @id @default(uuid())
+  company     Company  @relation(fields: [company_id], references: [id])
+  company_id  String
+  pharmacy    Pharmacy @relation(fields: [pharmacy_id], references: [id])
+  pharmacy_id String
+  product     Product  @relation(fields: [product_id], references: [id])
+  product_id  String
+  month       Int
+  year        Int
+  target_units Int     @default(0)
+  set_by      String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@unique([company_id, pharmacy_id, product_id, month, year])
+  @@index([company_id, month, year])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

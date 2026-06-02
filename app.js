@@ -26,6 +26,7 @@ import targetRouter from "./src/routes/target.route.js";
 import competitorRouter from "./src/routes/competitor.route.js";
 import libraryRouter from "./src/routes/library.route.js";
 import fieldEventRouter from "./src/routes/fieldevent.route.js";
+import placementRouter from "./src/routes/placement.route.js";
 import { notFound, errorHandler } from "./src/middleware/error.middleware.js";
 
 const app = express();
@@ -73,6 +74,9 @@ app.use("/api/tour-plan", tourPlanRouter);
 // Supervisor team intelligence
 app.use("/api/supervisor", supervisorRouter);
 
+// Territory management
+app.use("/api/territory", territoryRouter);
+
 // Sales targets (set by management, visible to reps)
 app.use("/api/target", targetRouter);
 
@@ -84,6 +88,9 @@ app.use("/api/library", libraryRouter);
 
 // Field events (OPD breakfasts, CME, product launches, etc.)
 app.use("/api/field-events", fieldEventRouter);
+
+// Stock placement targets (monthly units per SKU per outlet)
+app.use("/api/placement", placementRouter);
 
 // Legacy report generator
 app.use("/api/report", reportRouter);
