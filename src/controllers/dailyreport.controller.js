@@ -236,7 +236,7 @@ export const getCompanyObservers = asyncHandler(async (req, res) => {
 });
 
 // GET /api/daily-report/:id/activities
-// Returns every DoctorActivity logged by the rep on the report's date.
+// Returns every DoctorActivity AND PharmacyActivity logged by the rep on the report's date.
 // Scoped to the supervisor's company so a supervisor can never peek at another company.
 export const getReportActivities = asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -256,17 +256,31 @@ export const getReportActivities = asyncHandler(async (req, res) => {
   const end   = new Date(start);
   end.setUTCDate(start.getUTCDate() + 1);
 
-  const activities = await prisma.doctorActivity.findMany({
-    where: { user_id: report.user_id, date: { gte: start, lt: end } },
-    include: {
-      doctor:           { select: { id: true, doctor_name: true, speciality: true, location: true, town: true } },
-      focused_product:  { select: { id: true, product_name: true } },
-      products_detailed: { select: { id: true, product_name: true } },
-    },
-    orderBy: { date: "asc" },
-  });
+  const [doctorActivities, pharmacyActivities] = await Promise.all([
+    prisma.doctorActivity.findMany({
+      where: { user_id: report.user_id, date: { gte: start, lt: end } },
+      include: {
+        doctor:            { select: { id: true, doctor_name: true, speciality: true, location: true, town: true } },
+        focused_product:   { select: { id: true, product_name: true } },
+        products_detailed: { select: { id: true, product_name: true } },
+      },
+      orderBy: { date: "asc" },
+    }),
+    prisma.pharmacyActivity.findMany({
+      where: { user_id: report.user_id, date: { gte: start, lt: end } },
+      include: {
+        pharmacy: { select: { id: true, pharmacy_name: true, location: true, town: true } },
+      },
+      orderBy: { date: "asc" },
+    }),
+  ]);
 
-  res.json({ success: true, data: activities });
+  const data = [
+    ...doctorActivities.map((a) => ({ ...a, activity_type: "doctor" })),
+    ...pharmacyActivities.map((a) => ({ ...a, activity_type: "pharmacy" })),
+  ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  res.json({ success: true, data });
 });
 
 // GET /api/daily-report/company?days=30&status=SUBMITTED,APPROVED
