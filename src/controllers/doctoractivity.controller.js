@@ -257,7 +257,7 @@ export const getActivityHistory = asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const days = parseInt(req.query.days) || 30;
   const page = Math.max(1, parseInt(req.query.page) || 1);
-  const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+  const limit = Math.min(parseInt(req.query.limit) || 50, 1000);
   const skip = (page - 1) * limit;
   const since = new Date();
   since.setDate(since.getDate() - days);
