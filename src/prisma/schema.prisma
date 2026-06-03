@@ -56,6 +56,7 @@ model User {
   product_targets      ProductTarget[]
   competitor_intel     CompetitorIntel[]
   field_events         FieldEvent[]
+  late_requests        LateSubmissionRequest[]
 }
 
 model SupervisorProfile {
@@ -1209,4 +1210,36 @@ enum DoctorListType {
   KBL    // Key Business List — highest priority, seen most frequently
   BL     // Business List — regular coverage
   FOCUS  // Product-specific focus — targeted for a particular brand push
+}
+
+// ─── Late submission requests ─────────────────────────────────────────────────
+// When a rep misses the cycle (25th) or tour plan (5th) deadline, they must
+// request late-submission permission from their supervisor before submitting.
+
+model LateSubmissionRequest {
+  id          String            @id @default(uuid())
+  user        User              @relation(fields: [user_id], references: [id])
+  user_id     String
+  type        LateRequestType
+  month       Int
+  year        Int
+  note        String
+  status      LateRequestStatus @default(PENDING)
+  reviewed_by String?
+  reviewed_at DateTime?
+  review_note String?
+  created_at  DateTime          @default(now())
+
+  @@unique([user_id, type, month, year])
+}
+
+enum LateRequestType {
+  CYCLE
+  TOUR_PLAN
+}
+
+enum LateRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }

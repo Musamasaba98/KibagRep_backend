@@ -155,13 +155,43 @@ export const removeTourPlanEntry = asyncHandler(async (req, res) => {
 // ─── PUT /api/tour-plan/:id/submit ───────────────────────────────────────────
 export const submitTourPlan = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const userId = req.user.id;
 
   const plan = await prisma.tourPlan.findUnique({ where: { id } });
-  if (!plan || plan.user_id !== req.user.id) {
+  if (!plan || plan.user_id !== userId) {
     return res.status(404).json({ success: false, error: "Plan not found" });
   }
   if (plan.status !== "DRAFT") {
     return res.status(400).json({ success: false, error: "Only DRAFT plans can be submitted" });
+  }
+
+  // Gate: rep must have an approved call cycle for this same month/year
+  const approvedCycle = await prisma.callCycle.findFirst({
+    where: { user_id: userId, month: plan.month, year: plan.year, status: { in: ["APPROVED", "LOCKED"] } },
+  });
+  if (!approvedCycle) {
+    return res.status(403).json({
+      success: false,
+      error: "CYCLE_NOT_APPROVED",
+      message: "Your call cycle for this month must be approved before you can submit the tour plan.",
+    });
+  }
+
+  // Deadline: 5th of the plan's own month
+  const deadline = new Date(plan.year, plan.month - 1, 5, 23, 59, 59);
+  const now = new Date();
+  if (now > deadline) {
+    const lateReq = await prisma.lateSubmissionRequest.findUnique({
+      where: { user_id_type_month_year: { user_id: userId, type: "TOUR_PLAN", month: plan.month, year: plan.year } },
+    });
+    if (!lateReq || lateReq.status !== "APPROVED") {
+      const monthName = new Date(plan.year, plan.month - 1).toLocaleString("default", { month: "long" });
+      return res.status(403).json({
+        success: false,
+        error: "LATE_SUBMISSION_REQUIRED",
+        message: `The deadline to submit this tour plan was the 5th of ${monthName}. Please submit a late-submission request and wait for supervisor approval.`,
+      });
+    }
   }
 
   const updated = await prisma.tourPlan.update({

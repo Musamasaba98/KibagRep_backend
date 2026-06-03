@@ -7,6 +7,7 @@ import {
   addCycleItem,
   removeCycleItem,
   submitCycle,
+  carryForwardCycle,
   getPendingCycles,
   approveCycle,
   rejectCycle,
@@ -22,6 +23,7 @@ router.post("/current/items", protect, validate(AddCycleItemSchema), addCycleIte
 router.delete("/current/items/:itemId", protect, removeCycleItem);
 router.patch("/current/items/:itemId/precall", protect, updatePrecallNote);
 router.post("/:id/submit", protect, submitCycle);
+router.post("/carry-forward", protect, carryForwardCycle);
 
 // Supervisor routes
 router.get("/pending", protect, requireRole("Supervisor", "Manager", "SALES_ADMIN", "COUNTRY_MGR", "SUPER_ADMIN"), getPendingCycles);

@@ -3,12 +3,12 @@ import asyncHandler from "express-async-handler";
 
 // ── Rep endpoints ─────────────────────────────────────────────────────────────
 
-// GET /api/cycle/current — get or create this month's cycle for the logged-in rep
+// GET /api/cycle/current?month=&year= — get or create cycle for given month (defaults to current month)
 export const getCurrentCycle = asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const now = new Date();
-  const month = now.getMonth() + 1;
-  const year = now.getFullYear();
+  const month = req.query.month ? parseInt(req.query.month) : now.getMonth() + 1;
+  const year  = req.query.year  ? parseInt(req.query.year)  : now.getFullYear();
 
   let cycle = await prisma.callCycle.findUnique({
     where: { user_id_month_year: { user_id: userId, month, year } },
@@ -120,12 +120,97 @@ export const submitCycle = asyncHandler(async (req, res) => {
   if (cycle.user_id !== userId) { res.status(403); throw new Error("Not your cycle"); }
   if (cycle.status !== "DRAFT") { res.status(400); throw new Error(`Cycle is already ${cycle.status}`); }
 
+  // Deadline: 25th of the month BEFORE the cycle's month
+  // e.g. July cycle → deadline = June 25
+  const deadlineMonth = cycle.month === 1 ? 12 : cycle.month - 1;
+  const deadlineYear  = cycle.month === 1 ? cycle.year - 1 : cycle.year;
+  const deadline = new Date(deadlineYear, deadlineMonth - 1, 25, 23, 59, 59);
+  const now = new Date();
+
+  if (now > deadline) {
+    // Check for an approved late request for this cycle month/year
+    const lateReq = await prisma.lateSubmissionRequest.findUnique({
+      where: { user_id_type_month_year: { user_id: userId, type: "CYCLE", month: cycle.month, year: cycle.year } },
+    });
+    if (!lateReq || lateReq.status !== "APPROVED") {
+      return res.status(403).json({
+        success: false,
+        error: "LATE_SUBMISSION_REQUIRED",
+        message: `The deadline to submit this cycle was the 25th of ${new Date(deadlineYear, deadlineMonth - 1).toLocaleString("default", { month: "long" })}. Please submit a late-submission request and wait for supervisor approval.`,
+      });
+    }
+  }
+
   const updated = await prisma.callCycle.update({
     where: { id },
     data: { status: "SUBMITTED" },
   });
 
   res.status(200).json({ success: true, data: updated });
+});
+
+// POST /api/cycle/carry-forward — copy last approved cycle into next month DRAFT
+export const carryForwardCycle = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const now = new Date();
+  // Target: next month's cycle
+  const rawNext = now.getMonth() + 2; // getMonth is 0-indexed, +1 = current, +2 = next
+  const nextMonth = rawNext > 12 ? 1 : rawNext;
+  const nextYear  = rawNext > 12 ? now.getFullYear() + 1 : now.getFullYear();
+
+  // Find most recent approved/locked cycle to copy from
+  const source = await prisma.callCycle.findFirst({
+    where: { user_id: userId, status: { in: ["APPROVED", "LOCKED"] } },
+    orderBy: [{ year: "desc" }, { month: "desc" }],
+    include: { items: true },
+  });
+  if (!source || source.items.length === 0) {
+    res.status(404);
+    throw new Error("No approved cycle found to carry forward from");
+  }
+
+  // Get or create next month's DRAFT cycle
+  let target = await prisma.callCycle.findUnique({
+    where: { user_id_month_year: { user_id: userId, month: nextMonth, year: nextYear } },
+    include: { items: true },
+  });
+  if (!target) {
+    target = await prisma.callCycle.create({
+      data: { user_id: userId, month: nextMonth, year: nextYear },
+      include: { items: true },
+    });
+  }
+  if (target.status !== "DRAFT") {
+    res.status(400);
+    throw new Error("Cannot carry forward — next month's cycle is already submitted or approved");
+  }
+
+  // Add items not already in the target
+  const existing = new Set(target.items.map((i) => i.doctor_id));
+  const toAdd = source.items.filter((i) => !existing.has(i.doctor_id));
+  if (toAdd.length > 0) {
+    await prisma.callCycleItem.createMany({
+      data: toAdd.map((i) => ({
+        cycle_id: target.id,
+        doctor_id: i.doctor_id,
+        tier: i.tier,
+        list_type: i.list_type,
+        frequency: i.frequency,
+      })),
+      skipDuplicates: true,
+    });
+  }
+
+  const updated = await prisma.callCycle.findUnique({
+    where: { id: target.id },
+    include: {
+      items: {
+        include: { doctor: { select: { id: true, doctor_name: true, town: true, location: true, speciality: true } } },
+        orderBy: [{ tier: "asc" }, { visits_done: "asc" }],
+      },
+    },
+  });
+  res.status(200).json({ success: true, data: updated, carried: toAdd.length });
 });
 
 // ── Supervisor endpoints ───────────────────────────────────────────────────────
