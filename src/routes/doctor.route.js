@@ -1,8 +1,10 @@
 import express from "express";
+import multer from "multer";
 import {
   createDoctor, deleteDoctor, getAllDoctor, getDoctor, updateDoctor,
   searchDoctors, setDoctorTier,
   addDoctorFacility, setFacilityPrimary, removeDoctorFacility,
+  bulkEditDoctors, bulkUploadDoctors, downloadUploadTemplate,
 } from "../controllers/doctor.controller.js";
 import {
   recommendDoctor, reportNewClinician, getRecommendations,
@@ -13,6 +15,7 @@ import { validate } from "../middleware/validate.middleware.js";
 import { SetDoctorTierSchema } from "../schemas/index.js";
 
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 // All doctor routes require authentication
 router.use(protect);
@@ -27,12 +30,15 @@ router.put("/recommendations/:id/reject",  rejectRecommendation);
 router.put("/recommendations/:id/forward", forwardToKibag);
 router.post("/recommendations/:id/visit",  incrementUnplannedVisit);
 
+// ── Bulk operations (SUPER_ADMIN only) ────────────────────────────────────────
+router.post("/bulk-edit",                     requireRole("SUPER_ADMIN"), bulkEditDoctors);
+router.post("/bulk-upload",                   requireRole("SUPER_ADMIN"), upload.single("file"), bulkUploadDoctors);
+router.get( "/bulk-upload/template",          requireRole("SUPER_ADMIN"), downloadUploadTemplate);
+
 // ── Doctor CRUD ───────────────────────────────────────────────────────────────
-// Read — any authenticated user
 router.get("/",     getAllDoctor);
 router.get("/:id",  getDoctor);
 
-// Write — SUPER_ADMIN only (master HCP data)
 router.post(  "/",    requireRole("SUPER_ADMIN"), createDoctor);
 router.put(   "/:id", requireRole("SUPER_ADMIN"), updateDoctor);
 router.delete("/:id", requireRole("SUPER_ADMIN"), deleteDoctor);

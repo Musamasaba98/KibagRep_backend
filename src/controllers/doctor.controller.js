@@ -290,3 +290,137 @@ export const searchDoctors = asyncHandler(async (req, res) => {
   });
   res.status(200).json({ success: true, data: doctors });
 });
+
+// ─── POST /api/doctor/bulk-edit ───────────────────────────────────────────────
+// SUPER_ADMIN: update one or more fields across a list of doctor IDs
+export const bulkEditDoctors = asyncHandler(async (req, res) => {
+  const { ids, fields } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    res.status(400); throw new Error("ids must be a non-empty array");
+  }
+  if (!fields || typeof fields !== "object" || Object.keys(fields).length === 0) {
+    res.status(400); throw new Error("fields must be a non-empty object");
+  }
+  const allowed = ["cadre", "speciality", "town", "location", "prescribing_level", "contact"];
+  const data = {};
+  for (const key of allowed) {
+    if (fields[key] !== undefined) data[key] = fields[key];
+  }
+  if (Object.keys(data).length === 0) {
+    res.status(400); throw new Error("No updatable fields provided");
+  }
+  const result = await prisma.doctor.updateMany({ where: { id: { in: ids } }, data });
+  res.json({ success: true, updated: result.count });
+});
+
+// ─── POST /api/doctor/bulk-upload ────────────────────────────────────────────
+// SUPER_ADMIN: parse uploaded Excel, upsert doctors.
+// Match key: license_number (if present) → update; else create new.
+export const bulkUploadDoctors = asyncHandler(async (req, res) => {
+  if (!req.file) { res.status(400); throw new Error("No file uploaded"); }
+
+  const ExcelJS = (await import("exceljs")).default;
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(req.file.buffer);
+  const ws = wb.worksheets[0];
+  if (!ws) { res.status(400); throw new Error("No worksheet found in file"); }
+
+  // Read header row → map column names to indices
+  const headers = {};
+  ws.getRow(1).eachCell((cell, col) => {
+    headers[cell.value?.toString().trim().toLowerCase().replace(/\s+/g, "_")] = col;
+  });
+
+  const REQUIRED = ["doctor_name"];
+  for (const h of REQUIRED) {
+    if (!headers[h]) { res.status(400); throw new Error(`Missing required column: ${h}`); }
+  }
+
+  const rows = [];
+  ws.eachRow((row, rowNum) => {
+    if (rowNum === 1) return; // skip header
+    const get = (col) => { const v = row.getCell(col)?.value; return v != null ? String(v).trim() : null; };
+    const name = get(headers["doctor_name"]);
+    if (!name) return; // skip blank rows
+    rows.push({
+      doctor_name:       name,
+      cadre:             get(headers["cadre"]) ?? "Doctor",
+      speciality:        get(headers["speciality"]) ? get(headers["speciality"]).split(",").map(s => s.trim()) : [],
+      location:          get(headers["location"]) ?? "",
+      town:              get(headers["town"]) ?? "",
+      contact:           get(headers["contact"]),
+      license_number:    get(headers["license_number"]),
+      prescribing_level: get(headers["prescribing_level"]),
+      gps_lat:           get(headers["gps_lat"]) ? parseFloat(get(headers["gps_lat"])) : null,
+      gps_lng:           get(headers["gps_lng"]) ? parseFloat(get(headers["gps_lng"])) : null,
+    });
+  });
+
+  if (rows.length === 0) { res.status(400); throw new Error("No data rows found in file"); }
+
+  let created = 0, updated = 0, errors = [];
+
+  for (const row of rows) {
+    try {
+      // Try to find existing by license_number, then by exact name match
+      let existing = null;
+      if (row.license_number) {
+        existing = await prisma.doctor.findFirst({ where: { license_number: row.license_number } });
+      }
+      if (!existing) {
+        existing = await prisma.doctor.findFirst({
+          where: { doctor_name: { equals: row.doctor_name, mode: "insensitive" } },
+        });
+      }
+      if (existing) {
+        await prisma.doctor.update({ where: { id: existing.id }, data: row });
+        updated++;
+      } else {
+        await prisma.doctor.create({ data: row });
+        created++;
+      }
+    } catch (e) {
+      errors.push({ row: row.doctor_name, error: e.message });
+    }
+  }
+
+  res.json({ success: true, created, updated, errors, total: rows.length });
+});
+
+// ─── GET /api/doctor/bulk-upload/template ────────────────────────────────────
+// Returns an Excel template file the admin can fill in
+export const downloadUploadTemplate = asyncHandler(async (req, res) => {
+  const ExcelJS = (await import("exceljs")).default;
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Doctors");
+
+  const cols = [
+    { header: "doctor_name", key: "doctor_name", width: 30 },
+    { header: "cadre",       key: "cadre",       width: 15, note: "Doctor|Nurse|Midwife|Clinician|Pharmacist|Other" },
+    { header: "speciality",  key: "speciality",  width: 25, note: "Comma-separated e.g. Cardiology,Internal Medicine" },
+    { header: "location",    key: "location",    width: 20 },
+    { header: "town",        key: "town",        width: 18 },
+    { header: "contact",     key: "contact",     width: 15 },
+    { header: "license_number",    key: "license_number",    width: 18 },
+    { header: "prescribing_level", key: "prescribing_level", width: 22 },
+    { header: "gps_lat",    key: "gps_lat",    width: 14 },
+    { header: "gps_lng",    key: "gps_lng",    width: 14 },
+  ];
+
+  ws.columns = cols;
+
+  // Style header row
+  const headerRow = ws.getRow(1);
+  headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+  headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF16a34a" } };
+  headerRow.alignment = { horizontal: "center" };
+
+  // Sample rows
+  ws.addRow(["Dr. Example Name", "Doctor", "Internal Medicine", "Mulago Hill", "Kampala", "0700000000", "LIC001", "CONSULTANT", "0.3476", "32.5825"]);
+  ws.addRow(["Nurse Example", "Nurse", "", "Kawempe", "Kampala", "0711000000", "", "", "", ""]);
+
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", 'attachment; filename="doctors_upload_template.xlsx"');
+  await wb.xlsx.write(res);
+  res.end();
+});
