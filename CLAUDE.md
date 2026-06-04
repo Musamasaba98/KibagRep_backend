@@ -2,11 +2,101 @@
 
 ## Project Overview
 
-**KibagRep API** is the backend for the KibagRep Medical Sales Force Automation platform and HCP (Healthcare Professional) data layer. It serves three distinct user groups through one API:
+**KibagRep API** is the backend for two products that share one API and one PostgreSQL database:
 
+1. **KibagRep** — Medical Sales Force Automation (SFA) platform for pharma companies in Uganda/East Africa
+2. **Minurse** — Professional community and marketplace for medical professionals and students *(planned — not yet built)*
+
+The shared database is the moat: KibagRep owns the master HCP (Healthcare Professional) data layer for Uganda. Both products draw from the same verified doctor, nurse, and pharmacy records.
+
+### KibagRep serves three user groups:
 1. **Pharma company field forces** — reps, supervisors, managers, country managers (multi-tenant, per-company)
 2. **Doctors** — self-managing their profiles, preferences, CME records, and incentive receipts
 3. **Pharmacies** — self-reporting monthly sales, managing stock visibility
+
+---
+
+## Minurse — Planned Product (Not Yet Built)
+
+### Positioning
+> **"Built by nurses, for all medical professionals."**
+
+Minurse is a nurses-first professional platform. Every other medical community defaults to doctor-centric. Minurse centres nurses — the largest cadre of health workers in Uganda — as the primary audience, while welcoming all HCPs, students, and interns. Doctors follow where the community is.
+
+### Problem it solves
+Uganda government is phasing out payment for intern doctors. Medical students and new graduates face a survival crisis with no income, no professional community, and no organised access to tools, discounts, or locum work. Minurse addresses all three.
+
+### Core pillars
+| Pillar | Description |
+|--------|-------------|
+| **Community** | Professional profiles, content posting, case discussions, CME tracking |
+| **Marketplace** | Negotiated discounts on medical supplies, textbooks, equipment for verified medics. MTN/Airtel MoMo checkout. |
+| **Locum Board** | Facilities post short-term shifts; interns and new graduates apply |
+| **Pharma Engagement** | Verified medics access paid advisory panels, sponsored CME, and product feedback programmes posted by pharma companies |
+
+### Branding
+- **Name:** Minurse
+- **Primary colour:** Blue (intentionally distinct from KibagRep's green)
+- **Phase 1 route:** `/minurse` within existing frontend codebase
+- **Phase 2+ domain:** `minurse.app` or `minurse.ug` — separate frontend deployment, shared API
+
+### Identity and HCP Record Claiming
+KibagRep already holds verified HCP records. When a professional signs up on Minurse:
+1. System checks license number / email / phone against the existing `Doctor` table
+2. Match found → "We found your professional record — verify via OTP to claim it"
+3. Verified → Minurse profile links to their existing HCP record (facility, speciality, cadre carry over)
+4. No match (student, unregistered intern) → fresh profile; HCP record linked later when they qualify
+
+### User Types
+| Type | Verification Method | Access |
+|------|-------------------|--------|
+| Medical Student | Student body membership number (Phase 1); university API (Phase 3) | Community, student marketplace, student CME |
+| Intern Doctor | Medical school confirmation | Community, marketplace, locum board, CME |
+| Qualified Professional | Claimed HCP record or professional body number | Full access + content posting + pharma engagement |
+| Specialist / Consultant | Higher cadre tag on claimed HCP record | All above + content review/validation rights |
+| Facility | Manual admin verification | Post locum opportunities, publish facility news |
+
+### Content Moderation — Seniority-Based Peer Review
+- Any user can create a post — enters **PENDING** state
+- Review rights follow clinical hierarchy: a Specialist can validate any post from a cadre below them
+- Minimum one validator required before post is **PUBLISHED**
+- Flagged content escalates to Minurse admin
+- Content about specific drugs must include a disclaimer and pass cadre-appropriate review
+
+### Marketplace Monetisation
+- KibagRep negotiates bulk/wholesale rates with suppliers
+- Sells to verified medics at a margin above cost but below retail — margin is revenue
+- Digital products first (CME access, textbook PDFs, clinical guides) — no logistics
+- Physical products (equipment, stethoscopes) in Phase 2 after supply chain tested
+- Pharma companies pay to post verified engagement programmes to Minurse professionals
+
+### Verification Roadmap
+- **Phase 1:** Partner with medical student bodies at Makerere, Mbarara, Gulu medical schools
+- **Phase 2:** Partner with Uganda Medical and Dental Practitioners Council (UMDPC) + Uganda Nurses and Midwives Council (UNMC)
+- **Phase 3:** API integrations with professional body registration systems
+- Pharma engagement programmes require Phase 2+ verification (regulatory compliance)
+
+### API Design Principles
+- Minurse endpoints under `/api/minurse/` prefix
+- Minurse users have a `MinurseProfile` linked to `User` (if pharma staff) or a standalone `MinurseAccount`
+- Shared `Doctor` table is **read-only** from Minurse — Minurse cannot write HCP records except through the claiming flow
+- Marketplace orders use separate `Order`/`OrderItem` models — never mixed with pharma SFA data
+- Pharma company SFA data (visits, cycles, reports) is **never** exposed to Minurse users
+- Minurse user data is **never** exposed to pharma reps without explicit user consent
+
+### New Database Models Required (not yet in schema)
+```
+MinurseProfile         — links to User or standalone, stores bio, verification status, cadre
+MinursePost            — content posts (PENDING → PUBLISHED), author, reviewers, tags
+MinursePostReview      — reviewer_id, verdict, notes, reviewed_at
+MarketplaceListing     — product, price, supplier, discount_pct, cadre filter
+MarketplaceOrder       — buyer, items, total, payment_method, status
+MarketplaceOrderItem   — listing, qty, unit_price
+LocumPosting           — facility, role, duration, rate, status
+LocumApplication       — applicant, posting, cover_note, status
+PharmaEngagement       — company, title, eligibility, compensation, slots, deadline
+EngagementApplication  — applicant, engagement, status
+```
 
 **Business model:** KibagRep owns and maintains the master doctor and pharmacy database for Uganda (and later East Africa). Pharma companies pay per rep seat to access verified HCP data and the SFA platform. Doctor and pharmacy data stays fresh because HCPs maintain it directly — not because a rep manually updates an Excel sheet.
 

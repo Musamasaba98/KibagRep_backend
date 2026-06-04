@@ -230,3 +230,50 @@ KibagRep builds on all three: Salesdoor's UX philosophy, SaneForce's structural 
 | 2026-03-08 | SampleBalance as a computed running total | `remaining = issued - given` is always consistent. Prevents reps from giving more samples than they've been issued. |
 | 2026-03-08 | Campaign management in Phase 2 | Need real visit data (Phase 1) before campaign overlays are meaningful to measure. Sequence: measure first, then optimize. |
 | 2026-03-08 | PharmacySalesReport as monthly self-report | The fastest path to sell-out data without POS integration. Pharmacy owners in Uganda are accessible and motivated — they want the rep to come with the right stock. |
+
+---
+
+## Minurse — Phase 1 (Planned)
+**Goal:** Launch nurses-first professional community with profile claiming, content posting, and marketplace MVP.
+
+### New Backend Features
+- [ ] `MinurseAccount` model — standalone auth for medics not on KibagRep pharma side
+- [ ] `MinurseProfile` model — bio, cadre, verification_status, verification_method, linked_doctor_id
+- [ ] OTP-based HCP record claiming flow (`POST /minurse/claim`)
+- [ ] Student body verification: submit student ID → admin confirms → profile verified
+- [ ] `MinursePost` model + CRUD — PENDING → PUBLISHED via peer review
+- [ ] `MinursePostReview` model — seniority-gated review assignments
+- [ ] Content review endpoints: assign reviewer, submit verdict, auto-publish on threshold
+- [ ] Minurse auth: `/api/minurse/auth` — separate JWT scope from pharma staff tokens
+- [ ] `must_reset_password` flag on User — company-created accounts force password change on first login
+- [ ] `POST /api/auth/change-password` — resets password and clears the flag
+
+### Phase 1 Marketplace (Digital Only)
+- [ ] `MarketplaceListing` model — title, description, price, supplier, discount_pct, cadre_filter, listing_type (DIGITAL | PHYSICAL)
+- [ ] `MarketplaceOrder` + `MarketplaceOrderItem` models
+- [ ] MTN Mobile Money integration (Africa's Talking MoMo API)
+- [ ] Airtel Money integration
+- [ ] Order management endpoints — create, confirm payment, fulfil digital delivery
+- [ ] Supplier portal endpoints (SUPER_ADMIN managed initially)
+
+### Phase 1 Locum Board
+- [ ] `LocumPosting` model — facility, role, duration, daily_rate, requirements, status
+- [ ] `LocumApplication` model — applicant, posting, cover_note, status
+- [ ] Facility verification (manual admin approval to post)
+- [ ] Application endpoints + status tracking
+
+### Phase 2 Pharma Engagement (Requires UMDPC/UNMC verification)
+- [ ] `PharmaEngagement` model — posted by pharma company, eligibility by cadre/speciality
+- [ ] `EngagementApplication` model
+- [ ] Compliance flag: engagement programmes only visible to Phase 2+ verified professionals
+- [ ] Advisory session scheduling and payment tracking
+
+## Minurse — Decision Log
+| Date | Decision | Reasoning |
+|------|----------|-----------|
+| 2026-06-04 | Nurses-first positioning | Nurses are Uganda's largest HCP cadre. Every competitor defaults to doctor-centric. Nurses-first is a genuine differentiator and serves the underserved majority. |
+| 2026-06-04 | Blue brand colour | Intentionally distinct from KibagRep green. Two products, two brands, one database. |
+| 2026-06-04 | Phase 1 digital marketplace only | Eliminates logistics complexity. CME access, PDFs, clinical guides can be delivered immediately. Physical goods (equipment) added only after supply chain tested. |
+| 2026-06-04 | Student body verification first | Student bodies (Makerere, Mbarara, Gulu) maintain active student registers. Professional body APIs take months to negotiate. Student verification is faster and addresses the intern crisis immediately. |
+| 2026-06-04 | Seniority-based peer review | Mirrors actual clinical hierarchy — specialists already validate juniors in practice. This is the natural trust model for medical content. |
+| 2026-06-04 | Shared DB, separate frontend domain in Phase 2 | Phase 1 validates concept within existing codebase. Phase 2 split when Minurse has its own identity and traffic. |

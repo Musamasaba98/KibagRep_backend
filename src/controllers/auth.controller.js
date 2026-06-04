@@ -50,8 +50,30 @@ export const login = asyncHandler(async (req, res) => {
     success: true,
     token,
     refreshToken,
+    must_reset_password: user.must_reset_password ?? false,
     data: userWithoutPassword,
   });
+});
+
+// PUT /api/auth/change-password — used on first login when must_reset_password is true
+export const changePassword = asyncHandler(async (req, res) => {
+  const { current_password, new_password } = req.body;
+  if (!current_password || !new_password) {
+    res.status(400); throw new Error("current_password and new_password are required");
+  }
+  if (new_password.length < 8) {
+    res.status(400); throw new Error("New password must be at least 8 characters");
+  }
+  const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+  const match = await bcrypt.compare(current_password, user.password);
+  if (!match) { res.status(401); throw new Error("Current password is incorrect"); }
+
+  const hashed = await bcrypt.hash(new_password, 10);
+  await prisma.user.update({
+    where: { id: req.user.id },
+    data: { password: hashed, must_reset_password: false },
+  });
+  res.json({ success: true, message: "Password updated" });
 });
 
 export const refresh = asyncHandler(async (req, res) => {

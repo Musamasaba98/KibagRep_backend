@@ -57,6 +57,7 @@ model User {
   competitor_intel     CompetitorIntel[]
   field_events         FieldEvent[]
   late_requests        LateSubmissionRequest[]
+  must_reset_password  Boolean  @default(false)
 }
 
 model SupervisorProfile {
