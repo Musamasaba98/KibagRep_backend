@@ -58,6 +58,7 @@ model User {
   field_events         FieldEvent[]
   late_requests        LateSubmissionRequest[]
   must_reset_password  Boolean  @default(false)
+  push_subscriptions   PushSubscription[]
 }
 
 model SupervisorProfile {
@@ -1213,6 +1214,18 @@ enum DoctorListType {
   FOCUS  // Product-specific focus — targeted for a particular brand push
 }
 
+// ─── Web Push subscriptions ───────────────────────────────────────────────────
+// One record per browser/device per user. Replaced on re-subscribe.
+model PushSubscription {
+  id         String   @id @default(uuid())
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user_id    String
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  created_at DateTime @default(now())
+}
+
 // ─── Late submission requests ─────────────────────────────────────────────────
 // When a rep misses the cycle (25th) or tour plan (5th) deadline, they must
 // request late-submission permission from their supervisor before submitting.
@@ -1237,6 +1250,7 @@ model LateSubmissionRequest {
 enum LateRequestType {
   CYCLE
   TOUR_PLAN
+  DAILY_REPORT
 }
 
 enum LateRequestStatus {

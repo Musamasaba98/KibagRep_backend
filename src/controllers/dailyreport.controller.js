@@ -60,6 +60,36 @@ export const submitReport = asyncHandler(async (req, res) => {
   const tomorrow = new Date(today);
   tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
 
+  // ── Midnight gate (EAT) ───────────────────────────────────────────────────
+  // Report window: 00:00–23:59 EAT. After midnight EAT (21:00 UTC), a late
+  // submission request approved by the supervisor is required.
+  const nowUTC = new Date();
+  const eatHour = (nowUTC.getUTCHours() + 3) % 24;
+  const eatDay  = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000);
+  const reportDateEAT = today.toISOString().slice(0, 10);
+  const todayEAT      = eatDay.toISOString().slice(0, 10);
+  // Past midnight means today (EAT) is AFTER the report date
+  const isPastMidnight = todayEAT > reportDateEAT || (todayEAT === reportDateEAT && eatHour === 0);
+
+  if (isPastMidnight) {
+    const lateReq = await prisma.lateSubmissionRequest.findFirst({
+      where: {
+        user_id: userId,
+        type: "DAILY_REPORT",
+        month: today.getUTCMonth() + 1,
+        year: today.getUTCFullYear(),
+        status: "APPROVED",
+      },
+    });
+    if (!lateReq) {
+      return res.status(403).json({
+        success: false,
+        error: "LATE_SUBMISSION_REQUIRED",
+        message: "The report window closed at midnight. Please request late-submission approval from your supervisor.",
+      });
+    }
+  }
+
   const [visitsCount, pharmCount, samplesAgg, user] = await Promise.all([
     prisma.doctorActivity.count({ where: { user_id: userId, date: { gte: today, lt: tomorrow } } }),
     prisma.pharmacyActivity.count({ where: { user_id: userId, date: { gte: today, lt: tomorrow } } }),

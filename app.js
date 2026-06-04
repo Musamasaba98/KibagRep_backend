@@ -28,6 +28,7 @@ import libraryRouter from "./src/routes/library.route.js";
 import fieldEventRouter from "./src/routes/fieldevent.route.js";
 import placementRouter from "./src/routes/placement.route.js";
 import lateRequestRouter from "./src/routes/laterequest.route.js";
+import pushRouter from "./src/routes/push.route.js";
 import { notFound, errorHandler } from "./src/middleware/error.middleware.js";
 
 const app = express();
@@ -61,6 +62,7 @@ app.use("/api/field-doctor", doctorActivityRouter);
 // Call cycles
 app.use("/api/cycle", callCycleRouter);
 app.use("/api/late-requests", lateRequestRouter);
+app.use("/api/push", pushRouter);
 
 // Daily reports
 app.use("/api/daily-report", dailyReportRouter);
