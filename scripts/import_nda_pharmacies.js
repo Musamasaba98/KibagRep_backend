@@ -12,7 +12,9 @@ import pkg from "@prisma/client";
 const { PrismaClient } = pkg;
 import { PrismaPg } from "@prisma/adapter-pg";
 
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+const rawUrl = process.env.DATABASE_URL ?? "";
+const connectionString = rawUrl.includes("sslmode") ? rawUrl : `${rawUrl}?sslmode=require`;
+const adapter = new PrismaPg({ connectionString });
 const prisma = new PrismaClient({ adapter });
 
 const NDA_URL = "https://www.nda.or.ug/licensed-outlets/";
