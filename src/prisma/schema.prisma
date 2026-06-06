@@ -210,6 +210,8 @@ model Pharmacy {
   pharmacy_name        String
   location             String
   town                 String?
+  district             String?
+  region               String?
   description          String?
   contact              String?
   latitude             Float?
