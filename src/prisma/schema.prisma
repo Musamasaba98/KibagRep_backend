@@ -419,6 +419,10 @@ model Facility {
   id                   String               @id @default(uuid())
   name                 String
   location             String
+  town                 String?
+  district             String?
+  region               String?
+  ownership            String?
   description          String?
   latitude             Float?
   longitude            Float?
@@ -432,7 +436,6 @@ model Facility {
   territory_links      TerritoryFacility[]
   working_doctors      DoctorFacility[]      @relation("DoctorWorksFacility")
   tour_plan_entries    TourPlanEntry[]
-  town                 String?
   facility_type        String?
   dispense_events      DispenseEvent[]
   field_events         FieldEvent[]
