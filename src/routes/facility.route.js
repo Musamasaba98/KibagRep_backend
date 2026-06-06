@@ -12,7 +12,47 @@ const router = express.Router();
 router.use(protect);
 
 // Read — any authenticated user (reps, supervisors, managers all need facility data)
-router.get("/", getAllFacility);
+router.get("/", asyncHandler(async (req, res) => {
+  const { page, limit, search, type, ownership } = req.query;
+
+  if (!page && !limit) {
+    // No pagination params → return all (used by dropdowns in TourPlan, Events, Territory)
+    const data = await prisma.facility.findMany({
+      select: { id: true, name: true, location: true, town: true, facility_type: true, latitude: true, longitude: true },
+      orderBy: { name: "asc" },
+    });
+    return res.json({ status: "success", results: data.length, data });
+  }
+
+  // Paginated browse for admin views
+  const pg = Math.max(1, parseInt(page) || 1);
+  const lm = Math.min(100, parseInt(limit) || 50);
+  const q  = (search ?? "").toString().trim();
+  const where = {
+    AND: [
+      q ? { OR: [
+        { name:     { contains: q, mode: "insensitive" } },
+        { district: { contains: q, mode: "insensitive" } },
+        { region:   { contains: q, mode: "insensitive" } },
+      ]} : {},
+      type      ? { facility_type: type } : {},
+      ownership ? { ownership }           : {},
+    ].filter(o => Object.keys(o).length > 0),
+  };
+
+  const [total, data] = await Promise.all([
+    prisma.facility.count({ where }),
+    prisma.facility.findMany({
+      where,
+      select: { id: true, name: true, facility_type: true, town: true, district: true, region: true, ownership: true, latitude: true, longitude: true },
+      orderBy: { name: "asc" },
+      skip: (pg - 1) * lm,
+      take: lm,
+    }),
+  ]);
+
+  res.json({ status: "success", data, total, page: pg, pages: Math.ceil(total / lm) });
+}));
 router.get("/search", asyncHandler(async (req, res) => {
   const q = (req.query.q ?? "").toString().trim().toLowerCase();
   const facilities = await prisma.facility.findMany({

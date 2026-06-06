@@ -28,7 +28,47 @@ router.get("/search", protect, asyncHandler(async (req, res) => {
 
 // Shared master data — authenticated but not company-scoped (by design)
 router.use(protect);
-router.route("/").get(getAllPharmacy);
+router.get("/", asyncHandler(async (req, res) => {
+  const { page, limit, search, type } = req.query;
+
+  if (!page && !limit) {
+    // No pagination params → return all (used by dropdowns)
+    const data = await prisma.pharmacy.findMany({
+      where: { is_active: true },
+      select: { id: true, pharmacy_name: true, location: true, town: true, contact: true },
+      orderBy: { pharmacy_name: "asc" },
+    });
+    return res.json({ status: "success", results: data.length, data });
+  }
+
+  const pg = Math.max(1, parseInt(page) || 1);
+  const lm = Math.min(100, parseInt(limit) || 50);
+  const q  = (search ?? "").toString().trim();
+  const where = {
+    AND: [
+      q ? { OR: [
+        { pharmacy_name: { contains: q, mode: "insensitive" } },
+        { district:      { contains: q, mode: "insensitive" } },
+        { region:        { contains: q, mode: "insensitive" } },
+        { location:      { contains: q, mode: "insensitive" } },
+      ]} : {},
+      type ? { pharmacy_type: type } : {},
+    ].filter(o => Object.keys(o).length > 0),
+  };
+
+  const [total, data] = await Promise.all([
+    prisma.pharmacy.count({ where }),
+    prisma.pharmacy.findMany({
+      where,
+      select: { id: true, pharmacy_name: true, location: true, town: true, district: true, region: true, pharmacy_type: true, contact: true },
+      orderBy: { pharmacy_name: "asc" },
+      skip: (pg - 1) * lm,
+      take: lm,
+    }),
+  ]);
+
+  res.json({ status: "success", data, total, page: pg, pages: Math.ceil(total / lm) });
+}));
 router.route("/:id").get(getPharmacy);
 // Write operations restricted to SUPER_ADMIN (platform-wide master list)
 router.route("/").post(requireRole("SUPER_ADMIN"), createPharmacy);
