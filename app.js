@@ -30,6 +30,7 @@ import placementRouter from "./src/routes/placement.route.js";
 import lateRequestRouter from "./src/routes/laterequest.route.js";
 import pushRouter from "./src/routes/push.route.js";
 import locationRouter from "./src/routes/location.route.js";
+import pharmacyStaffRouter from "./src/routes/pharmacystaff.route.js";
 import { notFound, errorHandler } from "./src/middleware/error.middleware.js";
 
 const app = express();
@@ -98,6 +99,7 @@ app.use("/api/field-events", fieldEventRouter);
 // Stock placement targets (monthly units per SKU per outlet)
 app.use("/api/placement", placementRouter);
 app.use("/api/location", locationRouter);
+app.use("/api/pharmacy-staff", pharmacyStaffRouter);
 
 // Legacy report generator
 app.use("/api/report", reportRouter);

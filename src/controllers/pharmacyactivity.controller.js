@@ -4,7 +4,7 @@ import asyncHandler from "express-async-handler";
 // POST /api/field-pharmacy/add-pharmacy-activity
 export const createPharmacyActivity = asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { pharmacy_id, products_observed, outcome, gps_lat, gps_lng, queued_at } = req.body;
+  const { pharmacy_id, products_observed, outcome, gps_lat, gps_lng, queued_at, staff_met_ids } = req.body;
 
   if (!pharmacy_id) {
     res.status(400);
@@ -34,6 +34,9 @@ export const createPharmacyActivity = asyncHandler(async (req, res) => {
       gps_lng:        gps_lng ?? null,
       queued_at:      queued_at ? new Date(queued_at) : null,
       timing_anomaly: queued_at ? (new Date(queued_at).getHours() >= 21) : false,
+      ...(Array.isArray(staff_met_ids) && staff_met_ids.length > 0
+        ? { staff_met: { create: staff_met_ids.map((staff_id) => ({ staff_id })) } }
+        : {}),
     },
     include: {
       pharmacy: { select: { id: true, pharmacy_name: true, town: true, location: true } },

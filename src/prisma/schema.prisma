@@ -58,8 +58,11 @@ model User {
   field_events         FieldEvent[]
   late_requests        LateSubmissionRequest[]
   must_reset_password  Boolean  @default(false)
-  push_subscriptions   PushSubscription[]
-  location_pings       LocationPing[]
+  push_subscriptions           PushSubscription[]
+  location_pings               LocationPing[]
+  suggested_pharmacy_staff     PharmacyStaff[]    @relation("StaffSuggestedBy")
+  supervisor_approved_staff    PharmacyStaff[]    @relation("StaffSupervisorApproved")
+  admin_approved_staff         PharmacyStaff[]    @relation("StaffAdminApproved")
 }
 
 model SupervisorProfile {
@@ -225,6 +228,7 @@ model Pharmacy {
   daily_stats          PharmacyDailyStats[]
   competitor_intel     CompetitorIntel[]
   stock_placement_targets StockPlacementTarget[]
+  staff_links          PharmacyStaffLink[]
 }
 
 model Team {
@@ -314,6 +318,7 @@ model PharmacyActivity {
   stockTrackingProduct_id  String?
   queued_at               DateTime? // when rep logged the pharmacy visit on device
   timing_anomaly          Boolean   @default(false)
+  staff_met               PharmacyActivityStaff[]
 }
 
 // GPS breadcrumb pings from rep devices — captured every ~45s during work hours
@@ -1273,6 +1278,74 @@ enum LateRequestType {
 
 enum LateRequestStatus {
   PENDING
+  APPROVED
+  REJECTED
+}
+
+// ─── Pharmacy Staff master list ───────────────────────────────────────────────
+// Mirrors the Doctor master-list pattern. Reps suggest contacts during visits;
+// supervisor approves first, super admin does final sign-off before they enter
+// the master list and become visible to all reps across the platform.
+
+model PharmacyStaff {
+  id                          String              @id @default(uuid())
+  name                        String
+  role                        PharmacyStaffRole
+  phone                       String?
+  notes                       String?
+  status                      PharmacyStaffStatus @default(SUGGESTED)
+  suggested_by                User                @relation("StaffSuggestedBy", fields: [suggested_by_id], references: [id])
+  suggested_by_id             String
+  supervisor_approved_by      User?               @relation("StaffSupervisorApproved", fields: [supervisor_approved_by_id], references: [id])
+  supervisor_approved_by_id   String?
+  supervisor_approved_at      DateTime?
+  admin_approved_by           User?               @relation("StaffAdminApproved", fields: [admin_approved_by_id], references: [id])
+  admin_approved_by_id        String?
+  admin_approved_at           DateTime?
+  review_note                 String?
+  pharmacy_links              PharmacyStaffLink[]
+  visit_contacts              PharmacyActivityStaff[]
+  created_at                  DateTime            @default(now())
+  updated_at                  DateTime?           @updatedAt
+
+  @@index([status])
+}
+
+// Junction: one staff member can work at multiple pharmacies
+model PharmacyStaffLink {
+  id          String        @id @default(uuid())
+  staff       PharmacyStaff @relation(fields: [staff_id], references: [id])
+  staff_id    String
+  pharmacy    Pharmacy      @relation(fields: [pharmacy_id], references: [id])
+  pharmacy_id String
+  is_primary  Boolean       @default(false)
+  linked_at   DateTime      @default(now())
+
+  @@unique([staff_id, pharmacy_id])
+  @@index([pharmacy_id])
+}
+
+// Junction: which staff were actually spoken to during a pharmacy visit
+model PharmacyActivityStaff {
+  activity    PharmacyActivity @relation(fields: [activity_id], references: [id])
+  activity_id String
+  staff       PharmacyStaff    @relation(fields: [staff_id], references: [id])
+  staff_id    String
+
+  @@id([activity_id, staff_id])
+}
+
+enum PharmacyStaffRole {
+  Owner
+  Procurement
+  Dispenser
+  Pharmacist
+  Manager
+}
+
+enum PharmacyStaffStatus {
+  SUGGESTED
+  SUPERVISOR_APPROVED
   APPROVED
   REJECTED
 }
