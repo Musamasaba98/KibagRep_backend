@@ -19,8 +19,11 @@ const TEAM_INCLUDE = (companyId) => ({
     where: { company_id: companyId },
     select: {
       id: true, firstname: true, lastname: true, role: true,
-      territory:           { select: { id: true, name: true, territory_type: true, region: true } },
-      secondary_territory: { select: { id: true, name: true, territory_type: true, region: true } },
+      territories: {
+        include: {
+          territory: { select: { id: true, name: true, territory_type: true, region: true } },
+        },
+      },
     },
   },
   team_products: {

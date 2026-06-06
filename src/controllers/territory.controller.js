@@ -1,18 +1,15 @@
 import asyncHandler from "express-async-handler";
 import prisma from "../config/prisma.config.js";
 
+// ─── Shared include shape ─────────────────────────────────────────────────────
+
 const TERRITORY_INCLUDE = {
   facilities: {
     include: {
       facility: {
         select: {
-          id: true,
-          name: true,
-          location: true,
-          town: true,
-          latitude: true,
-          longitude: true,
-          description: true,
+          id: true, name: true, location: true, town: true,
+          latitude: true, longitude: true, description: true,
           working_doctors: {
             include: {
               doctor: { select: { id: true, doctor_name: true, cadre: true, speciality: true } },
@@ -22,8 +19,23 @@ const TERRITORY_INCLUDE = {
       },
     },
   },
+  pharmacies: {
+    include: {
+      pharmacy: {
+        select: {
+          id: true, pharmacy_name: true, location: true, town: true,
+          district: true, region: true, pharmacy_type: true,
+          contact: true, latitude: true, longitude: true,
+        },
+      },
+    },
+  },
   reps: {
-    select: { id: true, firstname: true, lastname: true, role: true, contact: true },
+    include: {
+      user: {
+        select: { id: true, firstname: true, lastname: true, role: true, contact: true },
+      },
+    },
   },
 };
 
@@ -32,29 +44,27 @@ export const getTerritories = asyncHandler(async (req, res) => {
   const companyId = req.user.company_id;
   if (!companyId) return res.status(400).json({ success: false, error: "No company assigned" });
 
-  const territories = await prisma.territory.findMany({
+  const raw = await prisma.territory.findMany({
     where: { company_id: companyId },
     include: TERRITORY_INCLUDE,
     orderBy: { name: "asc" },
   });
 
-  res.json({ success: true, data: territories });
+  res.json({ success: true, data: raw.map(normalise) });
 });
 
 // ─── GET /api/territory/my ────────────────────────────────────────────────────
-// Rep gets their own assigned territory
+// Rep gets all territories assigned to them
 export const getMyTerritory = asyncHandler(async (req, res) => {
   const userId = req.user.id;
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      territory_id: true,
-      territory: { include: TERRITORY_INCLUDE },
-    },
+  const assignments = await prisma.userTerritory.findMany({
+    where: { user_id: userId },
+    include: { territory: { include: TERRITORY_INCLUDE } },
   });
 
-  res.json({ success: true, data: user?.territory ?? null });
+  const territories = assignments.map(a => normalise(a.territory));
+  res.json({ success: true, data: territories });
 });
 
 // ─── POST /api/territory ──────────────────────────────────────────────────────
@@ -76,7 +86,7 @@ export const createTerritory = asyncHandler(async (req, res) => {
     include: TERRITORY_INCLUDE,
   });
 
-  res.status(201).json({ success: true, data: territory });
+  res.status(201).json({ success: true, data: normalise(territory) });
 });
 
 // ─── PUT /api/territory/:id ───────────────────────────────────────────────────
@@ -93,15 +103,15 @@ export const updateTerritory = asyncHandler(async (req, res) => {
   const territory = await prisma.territory.update({
     where: { id },
     data: {
-      name:           name?.trim()     ?? existing.name,
-      description:    description      ?? existing.description,
-      region:         region           ?? existing.region,
-      territory_type: territory_type   ?? existing.territory_type,
+      name:           name?.trim()   ?? existing.name,
+      description:    description    ?? existing.description,
+      region:         region         ?? existing.region,
+      territory_type: territory_type ?? existing.territory_type,
     },
     include: TERRITORY_INCLUDE,
   });
 
-  res.json({ success: true, data: territory });
+  res.json({ success: true, data: normalise(territory) });
 });
 
 // ─── DELETE /api/territory/:id ────────────────────────────────────────────────
@@ -114,11 +124,10 @@ export const deleteTerritory = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, error: "Territory not found" });
   }
 
-  // Unassign all reps from this territory first
-  await prisma.user.updateMany({ where: { territory_id: id }, data: { territory_id: null } });
-  // Delete facility links
+  // Junction rows cascade-delete via FK, but deleteMany is explicit
+  await prisma.userTerritory.deleteMany({ where: { territory_id: id } });
   await prisma.territoryFacility.deleteMany({ where: { territory_id: id } });
-  // Delete territory
+  await prisma.territoryPharmacy.deleteMany({ where: { territory_id: id } });
   await prisma.territory.delete({ where: { id } });
 
   res.json({ success: true });
@@ -142,7 +151,8 @@ export const addFacility = asyncHandler(async (req, res) => {
     include: {
       facility: {
         select: {
-          id: true, name: true, location: true, town: true, latitude: true, longitude: true,
+          id: true, name: true, location: true, town: true,
+          latitude: true, longitude: true,
           working_doctors: {
             include: { doctor: { select: { id: true, doctor_name: true, cadre: true } } },
           },
@@ -171,7 +181,54 @@ export const removeFacility = asyncHandler(async (req, res) => {
   res.json({ success: true });
 });
 
+// ─── POST /api/territory/:id/pharmacies ──────────────────────────────────────
+export const addPharmacy = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { pharmacy_id } = req.body;
+  const companyId = req.user.company_id;
+
+  const territory = await prisma.territory.findUnique({ where: { id } });
+  if (!territory || territory.company_id !== companyId) {
+    return res.status(404).json({ success: false, error: "Territory not found" });
+  }
+
+  const link = await prisma.territoryPharmacy.upsert({
+    where: { territory_id_pharmacy_id: { territory_id: id, pharmacy_id } },
+    create: { territory_id: id, pharmacy_id },
+    update: {},
+    include: {
+      pharmacy: {
+        select: {
+          id: true, pharmacy_name: true, location: true, town: true,
+          district: true, region: true, pharmacy_type: true,
+          contact: true, latitude: true, longitude: true,
+        },
+      },
+    },
+  });
+
+  res.status(201).json({ success: true, data: link });
+});
+
+// ─── DELETE /api/territory/:id/pharmacies/:pharmacyId ────────────────────────
+export const removePharmacy = asyncHandler(async (req, res) => {
+  const { id, pharmacyId } = req.params;
+  const companyId = req.user.company_id;
+
+  const territory = await prisma.territory.findUnique({ where: { id } });
+  if (!territory || territory.company_id !== companyId) {
+    return res.status(404).json({ success: false, error: "Territory not found" });
+  }
+
+  await prisma.territoryPharmacy.delete({
+    where: { territory_id_pharmacy_id: { territory_id: id, pharmacy_id: pharmacyId } },
+  });
+
+  res.json({ success: true });
+});
+
 // ─── POST /api/territory/:id/reps ────────────────────────────────────────────
+// Assign a rep to a territory (many-to-many — a rep can cover multiple routes)
 export const assignRep = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { user_id } = req.body;
@@ -182,19 +239,24 @@ export const assignRep = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, error: "Territory not found" });
   }
 
-  // Verify the user belongs to the same company
-  const user = await prisma.user.findUnique({ where: { id: user_id }, select: { company_id: true } });
+  const user = await prisma.user.findUnique({
+    where: { id: user_id },
+    select: { company_id: true, firstname: true, lastname: true, role: true },
+  });
   if (!user || user.company_id !== companyId) {
     return res.status(400).json({ success: false, error: "User not in this company" });
   }
 
-  const updated = await prisma.user.update({
-    where: { id: user_id },
-    data: { territory_id: id },
-    select: { id: true, firstname: true, lastname: true, role: true },
+  await prisma.userTerritory.upsert({
+    where: { user_id_territory_id: { user_id, territory_id: id } },
+    create: { user_id, territory_id: id },
+    update: {},
   });
 
-  res.json({ success: true, data: updated });
+  res.json({
+    success: true,
+    data: { id: user_id, firstname: user.firstname, lastname: user.lastname, role: user.role },
+  });
 });
 
 // ─── DELETE /api/territory/:id/reps/:userId ───────────────────────────────────
@@ -207,16 +269,14 @@ export const unassignRep = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, error: "Territory not found" });
   }
 
-  await prisma.user.update({
-    where: { id: userId },
-    data: { territory_id: null },
+  await prisma.userTerritory.delete({
+    where: { user_id_territory_id: { user_id: userId, territory_id: id } },
   });
 
   res.json({ success: true });
 });
 
 // ─── POST /api/territory/doctor-facility ─────────────────────────────────────
-// Link a doctor to a facility (many-to-many work relationship)
 export const linkDoctorFacility = asyncHandler(async (req, res) => {
   const { doctor_id, facility_id, is_primary } = req.body;
 
@@ -225,7 +285,7 @@ export const linkDoctorFacility = asyncHandler(async (req, res) => {
     create: { doctor_id, facility_id, is_primary: is_primary ?? false },
     update: { is_primary: is_primary ?? false },
     include: {
-      doctor: { select: { id: true, doctor_name: true, cadre: true } },
+      doctor:   { select: { id: true, doctor_name: true, cadre: true } },
       facility: { select: { id: true, name: true, location: true, town: true } },
     },
   });
@@ -243,3 +303,12 @@ export const unlinkDoctorFacility = asyncHandler(async (req, res) => {
 
   res.json({ success: true });
 });
+
+// ─── Helper: flatten junction shape for frontend ──────────────────────────────
+// Converts reps: [{ user: {...} }] → reps: [{ id, firstname, ... }]
+function normalise(t) {
+  return {
+    ...t,
+    reps: (t.reps ?? []).map(r => r.user),
+  };
+}

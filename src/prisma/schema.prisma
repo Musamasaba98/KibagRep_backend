@@ -23,11 +23,7 @@ model User {
   longitude            Float?
   company              Company?             @relation(fields: [company_id], references: [id])
   company_id           String?
-  territory              Territory?           @relation("UserTerritory", fields: [territory_id], references: [id])
-  territory_id           String?
-  // Optional: rep may cover a second territory (e.g. an upcountry block one week per month)
-  secondary_territory    Territory?           @relation("UserSecondaryTerritory", fields: [secondary_territory_id], references: [id])
-  secondary_territory_id String?
+  territories            UserTerritory[]
   team                   Team?               @relation(fields: [team_id], references: [id])
   team_id              String?
   supervised_teams       Team[]              @relation("TeamSupervisor")
@@ -231,6 +227,7 @@ model Pharmacy {
   competitor_intel     CompetitorIntel[]
   stock_placement_targets StockPlacementTarget[]
   staff_links          PharmacyStaffLink[]
+  territory_links      TerritoryPharmacy[]
 }
 
 model Team {
@@ -663,17 +660,35 @@ enum TourPlanStatus {
 
 model Territory {
   id             String              @id @default(uuid())
-  name           String              // e.g. "Kampala Central", "Eastern Mbale Block"
+  name           String              // e.g. "Gayaza Road", "Masaka", "Mulago"
   description    String?
   region         String?             // e.g. "Central", "Eastern", "Western", "Northern"
   territory_type TerritoryType       @default(TOWN)
   company        Company             @relation(fields: [company_id], references: [id])
   company_id     String
   facilities     TerritoryFacility[]
-  reps           User[]              @relation("UserTerritory")
-  secondary_reps User[]              @relation("UserSecondaryTerritory")
+  pharmacies     TerritoryPharmacy[]
+  reps           UserTerritory[]
   created_at     DateTime            @default(now())
   updated_at     DateTime?           @updatedAt
+}
+
+model UserTerritory {
+  user         User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user_id      String
+  territory    Territory @relation(fields: [territory_id], references: [id], onDelete: Cascade)
+  territory_id String
+
+  @@id([user_id, territory_id])
+}
+
+model TerritoryPharmacy {
+  territory    Territory @relation(fields: [territory_id], references: [id], onDelete: Cascade)
+  territory_id String
+  pharmacy     Pharmacy  @relation(fields: [pharmacy_id], references: [id], onDelete: Cascade)
+  pharmacy_id  String
+
+  @@id([territory_id, pharmacy_id])
 }
 
 model TerritoryFacility {
