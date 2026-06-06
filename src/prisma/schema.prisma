@@ -59,6 +59,7 @@ model User {
   late_requests        LateSubmissionRequest[]
   must_reset_password  Boolean  @default(false)
   push_subscriptions   PushSubscription[]
+  location_pings       LocationPing[]
 }
 
 model SupervisorProfile {
@@ -293,6 +294,8 @@ model DoctorActivity {
   nca_reason         String?
   visit_status       VisitStatus  @default(VISITED)
   miss_reason        String?
+  queued_at          DateTime?    // when rep tapped "Log Visit" on device (null = logged online)
+  timing_anomaly     Boolean      @default(false) // true when queued_at is in evening (>18:00) with no prior pings
 }
 
 model PharmacyActivity {
@@ -310,6 +313,22 @@ model PharmacyActivity {
   stockTrackingDate       DateTime?
   stockTrackingPharmacy_id String?
   stockTrackingProduct_id  String?
+  queued_at               DateTime? // when rep logged the pharmacy visit on device
+  timing_anomaly          Boolean   @default(false)
+}
+
+// GPS breadcrumb pings from rep devices — captured every ~45s during work hours
+model LocationPing {
+  id          String   @id @default(uuid())
+  user        User     @relation(fields: [user_id], references: [id])
+  user_id     String
+  lat         Float
+  lng         Float
+  accuracy    Float?   // metres — suspiciously perfect (0.0) is a mock GPS flag
+  recorded_at DateTime // device time when ping was captured
+  synced_at   DateTime @default(now())
+
+  @@index([user_id, recorded_at])
 }
 
 // The person at a pharmacy or hospital who handles orders for products.

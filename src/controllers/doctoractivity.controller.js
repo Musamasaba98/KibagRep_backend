@@ -15,6 +15,12 @@ function gpsDistanceMetres(lat1, lng1, lat2, lng2) {
 
 const GPS_ANOMALY_THRESHOLD_M = 500;
 
+// A visit queued after 17:30 is flagged — reps should be logging in real-time
+function isTimingAnomaly(queuedAt) {
+  const h = queuedAt.getHours();
+  return h >= 17 && h < 24;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function startOfToday() {
@@ -47,7 +53,7 @@ export const getTodayActivities = asyncHandler(async (req, res) => {
 });
 
 export const createDoctorActivity = asyncHandler(async (req, res) => {
-  const { doctor_id, products_detailed, focused_product_id, samples_given, outcome, gps_lat, gps_lng } = req.body;
+  const { doctor_id, products_detailed, focused_product_id, samples_given, outcome, gps_lat, gps_lng, queued_at } = req.body;
   const user_id = req.user.id;
   if (!doctor_id || !focused_product_id) {
     res.status(400);
@@ -97,6 +103,8 @@ export const createDoctorActivity = asyncHandler(async (req, res) => {
         gps_lng: gps_lng ?? null,
         gps_anomaly,
         visit_status: "VISITED",
+        queued_at:      queued_at ? new Date(queued_at) : null,
+        timing_anomaly: queued_at ? isTimingAnomaly(new Date(queued_at)) : false,
       },
       include: {
         doctor: { select: { id: true, doctor_name: true } },
