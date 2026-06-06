@@ -44,17 +44,14 @@ router.get("/", asyncHandler(async (req, res) => {
   const pg = Math.max(1, parseInt(page) || 1);
   const lm = Math.min(100, parseInt(limit) || 50);
   const q  = (search ?? "").toString().trim();
-  const where = {
-    AND: [
-      q ? { OR: [
-        { pharmacy_name: { contains: q, mode: "insensitive" } },
-        { district:      { contains: q, mode: "insensitive" } },
-        { region:        { contains: q, mode: "insensitive" } },
-        { location:      { contains: q, mode: "insensitive" } },
-      ]} : {},
-      type ? { pharmacy_type: type } : {},
-    ].filter(o => Object.keys(o).length > 0),
-  };
+  const where = {};
+  if (q) where.OR = [
+    { pharmacy_name: { contains: q, mode: "insensitive" } },
+    { district:      { contains: q, mode: "insensitive" } },
+    { region:        { contains: q, mode: "insensitive" } },
+    { location:      { contains: q, mode: "insensitive" } },
+  ];
+  if (type) where.pharmacy_type = type;
 
   const [total, data] = await Promise.all([
     prisma.pharmacy.count({ where }),
