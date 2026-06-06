@@ -76,9 +76,16 @@ export const getPendingLateRequests = asyncHandler(async (req, res) => {
 // ── Supervisor: PUT /api/late-requests/:id/approve ────────────────────────────
 export const approveLateRequest = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const req_ = await prisma.lateSubmissionRequest.findUnique({
+    where:   { id },
+    include: { user: { select: { company_id: true } } },
+  });
+  if (!req_) { res.status(404); throw new Error("Request not found"); }
+  if (req_.user.company_id !== req.user.company_id) { res.status(403); throw new Error("Access denied"); }
+
   const updated = await prisma.lateSubmissionRequest.update({
     where: { id },
-    data: { status: "APPROVED", reviewed_by: req.user.id, reviewed_at: new Date() },
+    data:  { status: "APPROVED", reviewed_by: req.user.id, reviewed_at: new Date() },
   });
   res.json({ success: true, data: updated });
 });
@@ -87,9 +94,16 @@ export const approveLateRequest = asyncHandler(async (req, res) => {
 export const rejectLateRequest = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { note } = req.body;
+  const req_ = await prisma.lateSubmissionRequest.findUnique({
+    where:   { id },
+    include: { user: { select: { company_id: true } } },
+  });
+  if (!req_) { res.status(404); throw new Error("Request not found"); }
+  if (req_.user.company_id !== req.user.company_id) { res.status(403); throw new Error("Access denied"); }
+
   const updated = await prisma.lateSubmissionRequest.update({
     where: { id },
-    data: { status: "REJECTED", reviewed_by: req.user.id, reviewed_at: new Date(), review_note: note ?? null },
+    data:  { status: "REJECTED", reviewed_by: req.user.id, reviewed_at: new Date(), review_note: note ?? null },
   });
   res.json({ success: true, data: updated });
 });

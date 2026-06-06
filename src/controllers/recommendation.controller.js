@@ -157,6 +157,10 @@ export const approveRecommendation = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error("Recommendation not found");
   }
+  if (rec.company_id !== companyId && req.user.role !== "SUPER_ADMIN") {
+    res.status(403);
+    throw new Error("Access denied");
+  }
   if (rec.status !== "PENDING") {
     res.status(400);
     throw new Error(`Recommendation is already ${rec.status}`);
@@ -186,6 +190,7 @@ export const rejectRecommendation = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const reviewerId = req.user?.id;
   const role = req.user?.role;
+  const companyId = req.user?.company_id;
   const { review_note } = req.body;
 
   if (!["Supervisor", "Manager", "COUNTRY_MGR", "SUPER_ADMIN"].includes(role)) {
@@ -197,6 +202,10 @@ export const rejectRecommendation = asyncHandler(async (req, res) => {
   if (!rec) {
     res.status(404);
     throw new Error("Recommendation not found");
+  }
+  if (rec.company_id !== companyId && role !== "SUPER_ADMIN") {
+    res.status(403);
+    throw new Error("Access denied");
   }
   if (rec.status !== "PENDING") {
     res.status(400);

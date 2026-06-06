@@ -189,9 +189,10 @@ export const approveReport = asyncHandler(async (req, res) => {
 
   const report = await prisma.dailyReport.findUnique({
     where: { id },
-    include: { user: { select: { email: true, firstname: true, lastname: true } } },
+    include: { user: { select: { email: true, firstname: true, lastname: true, company_id: true } } },
   });
   if (!report) { res.status(404); throw new Error("Report not found"); }
+  if (report.user.company_id !== req.user.company_id) { res.status(403); throw new Error("Access denied"); }
   if (report.status !== "SUBMITTED") { res.status(400); throw new Error("Report is not in SUBMITTED state"); }
 
   const updated = await prisma.dailyReport.update({
@@ -220,9 +221,10 @@ export const rejectReport = asyncHandler(async (req, res) => {
 
   const report = await prisma.dailyReport.findUnique({
     where: { id },
-    include: { user: { select: { email: true, firstname: true, lastname: true } } },
+    include: { user: { select: { email: true, firstname: true, lastname: true, company_id: true } } },
   });
   if (!report) { res.status(404); throw new Error("Report not found"); }
+  if (report.user.company_id !== req.user.company_id) { res.status(403); throw new Error("Access denied"); }
   if (report.status !== "SUBMITTED") { res.status(400); throw new Error("Report is not in SUBMITTED state"); }
 
   const updated = await prisma.dailyReport.update({

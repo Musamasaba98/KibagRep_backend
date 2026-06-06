@@ -269,8 +269,12 @@ export const getPendingCycles = asyncHandler(async (req, res) => {
 export const approveCycle = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  const cycle = await prisma.callCycle.findUnique({ where: { id } });
+  const cycle = await prisma.callCycle.findUnique({
+    where:   { id },
+    include: { user: { select: { company_id: true } } },
+  });
   if (!cycle) { res.status(404); throw new Error("Cycle not found"); }
+  if (cycle.user.company_id !== req.user.company_id) { res.status(403); throw new Error("Access denied"); }
   if (cycle.status !== "SUBMITTED") { res.status(400); throw new Error("Only SUBMITTED cycles can be approved"); }
 
   const updated = await prisma.callCycle.update({
@@ -291,8 +295,12 @@ export const rejectCycle = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { note } = req.body;
 
-  const cycle = await prisma.callCycle.findUnique({ where: { id } });
+  const cycle = await prisma.callCycle.findUnique({
+    where:   { id },
+    include: { user: { select: { company_id: true } } },
+  });
   if (!cycle) { res.status(404); throw new Error("Cycle not found"); }
+  if (cycle.user.company_id !== req.user.company_id) { res.status(403); throw new Error("Access denied"); }
   if (cycle.status !== "SUBMITTED") { res.status(400); throw new Error("Only SUBMITTED cycles can be rejected"); }
 
   const updated = await prisma.callCycle.update({

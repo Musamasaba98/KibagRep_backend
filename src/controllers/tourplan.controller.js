@@ -222,6 +222,13 @@ export const getPendingTourPlans = asyncHandler(async (req, res) => {
 // ─── PUT /api/tour-plan/:id/approve ──────────────────────────────────────────
 export const approveTourPlan = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const plan = await prisma.tourPlan.findUnique({
+    where:   { id },
+    include: { user: { select: { company_id: true } } },
+  });
+  if (!plan) { res.status(404); throw new Error("Tour plan not found"); }
+  if (plan.user.company_id !== req.user.company_id) { res.status(403); throw new Error("Access denied"); }
+
   const updated = await prisma.tourPlan.update({
     where: { id },
     data: { status: "APPROVED", reviewed_by: req.user.id, reviewed_at: new Date() },
@@ -234,6 +241,14 @@ export const approveTourPlan = asyncHandler(async (req, res) => {
 export const rejectTourPlan = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { review_note } = req.body;
+
+  const plan = await prisma.tourPlan.findUnique({
+    where:   { id },
+    include: { user: { select: { company_id: true } } },
+  });
+  if (!plan) { res.status(404); throw new Error("Tour plan not found"); }
+  if (plan.user.company_id !== req.user.company_id) { res.status(403); throw new Error("Access denied"); }
+
   const updated = await prisma.tourPlan.update({
     where: { id },
     data: { status: "REJECTED", reviewed_by: req.user.id, reviewed_at: new Date(), review_note: review_note ?? null },

@@ -37,6 +37,16 @@ export const generateReport = asyncHandler(async (req, res) => {
     select: { id: true, firstname: true, lastname: true, company_id: true },
   });
   if (!repUser) { res.status(404); throw new Error("User not found"); }
+  // Cross-company report generation is only allowed for SUPER_ADMIN and COUNTRY_MGR
+  const crossCompanyRoles = ["SUPER_ADMIN", "COUNTRY_MGR"];
+  if (
+    targetUserId !== requestingUser.id &&
+    repUser.company_id !== requestingUser.company_id &&
+    !crossCompanyRoles.includes(requestingUser.role)
+  ) {
+    res.status(403);
+    throw new Error("Cannot generate reports for users outside your company");
+  }
 
   const [doctorActs, pharmacyActs, products] = await Promise.all([
     prisma.doctorActivity.findMany({
