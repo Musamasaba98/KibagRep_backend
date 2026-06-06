@@ -1,4 +1,5 @@
 import express from "express";
+import { protect, requireRole } from "../middleware/auth.middleware.js";
 import {
   createStockTracking,
   deleteStockTracking,
@@ -9,10 +10,12 @@ import {
 
 const router = express.Router();
 
-router.route("/").post(createStockTracking);
-router.route("/").get(getAllStockTracking);
-router.route("/:id").get(getStockTracking);
-router.route("/:id").put(updateStockTracking);
-router.route("/:id").delete(deleteStockTracking);
+router.use(protect);
+
+router.get("/",    getAllStockTracking);
+router.get("/:id", getStockTracking);
+router.post("/",   createStockTracking);
+router.put("/:id", updateStockTracking);
+router.delete("/:id", requireRole(["Supervisor", "Manager", "SUPER_ADMIN"]), deleteStockTracking);
 
 export default router;

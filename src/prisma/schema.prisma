@@ -264,6 +264,7 @@ model StockTracking {
 }
 
 model SampleDistribution {
+  id            String   @id @default(uuid())
   user          User     @relation(fields: [user_id], references: [id])
   user_id       String
   doctor        Doctor   @relation(fields: [doctor_id], references: [id])
@@ -272,8 +273,6 @@ model SampleDistribution {
   product_id    String
   samples_given Int
   date          DateTime @default(now())
-
-  @@id([user_id, doctor_id, product_id, date])
 }
 
 model DoctorActivity {
