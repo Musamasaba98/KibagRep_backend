@@ -15,10 +15,10 @@ function gpsDistanceMetres(lat1, lng1, lat2, lng2) {
 
 const GPS_ANOMALY_THRESHOLD_M = 500;
 
-// A visit queued after 17:30 is flagged — reps should be logging in real-time
+// Flag visits queued after 21:00 — reps legitimately see clinicians up to ~9pm
 function isTimingAnomaly(queuedAt) {
   const h = queuedAt.getHours();
-  return h >= 17 && h < 24;
+  return h >= 21 && h < 24;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

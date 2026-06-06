@@ -33,7 +33,7 @@ export const createPharmacyActivity = asyncHandler(async (req, res) => {
       gps_lat:        gps_lat ?? null,
       gps_lng:        gps_lng ?? null,
       queued_at:      queued_at ? new Date(queued_at) : null,
-      timing_anomaly: queued_at ? (new Date(queued_at).getHours() >= 17) : false,
+      timing_anomaly: queued_at ? (new Date(queued_at).getHours() >= 21) : false,
     },
     include: {
       pharmacy: { select: { id: true, pharmacy_name: true, town: true, location: true } },
