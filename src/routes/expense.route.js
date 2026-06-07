@@ -21,14 +21,14 @@ router.use(protect);
 // Static routes — must come before /:id
 router.get("/my", getMyClaims);
 router.post("/create", validate(CreateClaimSchema), createClaim);
-router.get("/pending", requireRole(["Supervisor", "Manager", "SALES_ADMIN", "SUPER_ADMIN"]), getPendingClaims);
+router.get("/pending", requireRole(["Supervisor", "Manager", "SALES_ADMIN", "COUNTRY_MGR", "SUPER_ADMIN"]), getPendingClaims);
 
 // Dynamic /:id routes
 router.get("/:id", getClaim);
 router.post("/:id/items", validate(AddExpenseItemSchema), addItem);
 router.delete("/:id/items/:itemId", removeItem);
 router.put("/:id/submit", submitClaim);
-router.put("/:id/approve", requireRole(["Supervisor", "Manager", "SALES_ADMIN", "SUPER_ADMIN"]), approveClaim);
-router.put("/:id/reject", requireRole(["Supervisor", "Manager", "SALES_ADMIN", "SUPER_ADMIN"]), validate(RejectClaimSchema), rejectClaim);
+router.put("/:id/approve", requireRole(["Supervisor", "Manager", "SALES_ADMIN", "COUNTRY_MGR", "SUPER_ADMIN"]), approveClaim);
+router.put("/:id/reject", requireRole(["Supervisor", "Manager", "SALES_ADMIN", "COUNTRY_MGR", "SUPER_ADMIN"]), validate(RejectClaimSchema), rejectClaim);
 
 export default router;

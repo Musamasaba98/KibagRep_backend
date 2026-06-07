@@ -5,6 +5,7 @@ import {
   searchDoctors, setDoctorTier,
   addDoctorFacility, setFacilityPrimary, removeDoctorFacility,
   bulkEditDoctors, bulkUploadDoctors, downloadUploadTemplate,
+  addToCompanyList, removeFromCompanyList,
 } from "../controllers/doctor.controller.js";
 import {
   recommendDoctor, reportNewClinician, getRecommendations,
@@ -47,6 +48,11 @@ router.delete("/:id", requireRole("SUPER_ADMIN"), deleteDoctor);
 router.post(  "/:id/facilities",              requireRole("SUPER_ADMIN"), addDoctorFacility);
 router.put(   "/:id/facilities/:facilityId",  requireRole("SUPER_ADMIN"), setFacilityPrimary);
 router.delete("/:id/facilities/:facilityId",  requireRole("SUPER_ADMIN"), removeDoctorFacility);
+
+// ── Company list management (SALES_ADMIN / Manager / COUNTRY_MGR) ─────────────
+const LIST_MANAGERS = ["SALES_ADMIN", "Manager", "COUNTRY_MGR", "SUPER_ADMIN"];
+router.post(  "/:id/company-list", requireRole(LIST_MANAGERS), addToCompanyList);
+router.delete("/:id/company-list", requireRole(LIST_MANAGERS), removeFromCompanyList);
 
 // ── Company tier (Supervisor / Manager / SALES_ADMIN) ─────────────────────────
 router.put("/:id/tier", validate(SetDoctorTierSchema), setDoctorTier);

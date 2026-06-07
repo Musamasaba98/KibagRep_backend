@@ -424,3 +424,37 @@ export const downloadUploadTemplate = asyncHandler(async (req, res) => {
   await wb.xlsx.write(res);
   res.end();
 });
+
+// POST /api/doctor/:id/company-list — admin/manager directly adds doctor to company list
+export const addToCompanyList = asyncHandler(async (req, res) => {
+  const doctor_id  = req.params.id;
+  const company_id = req.user?.company_id;
+  if (!company_id) { res.status(400); throw new Error("User is not associated with a company"); }
+
+  const doctor = await prisma.doctor.findUnique({ where: { id: doctor_id }, select: { id: true, doctor_name: true } });
+  if (!doctor) { res.status(404); throw new Error("Doctor not found"); }
+
+  await prisma.companyDoctor.upsert({
+    where:  { company_id_doctor_id: { company_id, doctor_id } },
+    create: { company_id, doctor_id, added_by: req.user.id },
+    update: {},
+  });
+
+  res.status(201).json({ success: true, data: { company_id, doctor_id } });
+});
+
+// DELETE /api/doctor/:id/company-list — admin/manager removes doctor from company list
+export const removeFromCompanyList = asyncHandler(async (req, res) => {
+  const doctor_id  = req.params.id;
+  const company_id = req.user?.company_id;
+  if (!company_id) { res.status(400); throw new Error("User is not associated with a company"); }
+
+  const existing = await prisma.companyDoctor.findUnique({
+    where: { company_id_doctor_id: { company_id, doctor_id } },
+  });
+  if (!existing) { res.status(404); throw new Error("Doctor not on company list"); }
+
+  await prisma.companyDoctor.delete({ where: { company_id_doctor_id: { company_id, doctor_id } } });
+
+  res.json({ success: true });
+});
