@@ -56,9 +56,12 @@ model User {
   must_reset_password  Boolean  @default(false)
   push_subscriptions           PushSubscription[]
   location_pings               LocationPing[]
-  suggested_pharmacy_staff     PharmacyStaff[]    @relation("StaffSuggestedBy")
-  supervisor_approved_staff    PharmacyStaff[]    @relation("StaffSupervisorApproved")
-  admin_approved_staff         PharmacyStaff[]    @relation("StaffAdminApproved")
+  suggested_pharmacy_staff           PharmacyStaff[]  @relation("StaffSuggestedBy")
+  supervisor_approved_staff          PharmacyStaff[]  @relation("StaffSupervisorApproved")
+  admin_approved_staff               PharmacyStaff[]  @relation("StaffAdminApproved")
+  suggested_facility_staff           FacilityStaff[]  @relation("FacilityStaffSuggestedBy")
+  supervisor_approved_facility_staff FacilityStaff[]  @relation("FacilityStaffSupervisorApproved")
+  admin_approved_facility_staff      FacilityStaff[]  @relation("FacilityStaffAdminApproved")
 }
 
 model SupervisorProfile {
@@ -133,6 +136,8 @@ model Company {
   doctor_tiers         DoctorCompanyTier[]
   facility_tiers       FacilityCompanyTier[]
   company_doctors      CompanyDoctor[]
+  company_pharmacies   CompanyPharmacy[]
+  company_facilities   CompanyFacility[]
   territories          Territory[]
   doctor_recommendations DoctorRecommendation[]
   drug_catalog_maps      DrugCatalogProductMap[]
@@ -228,6 +233,7 @@ model Pharmacy {
   stock_placement_targets StockPlacementTarget[]
   staff_links          PharmacyStaffLink[]
   territory_links      TerritoryPharmacy[]
+  company_links        CompanyPharmacy[]
 }
 
 model Team {
@@ -436,6 +442,8 @@ model Facility {
   facility_type        String?
   dispense_events      DispenseEvent[]
   field_events         FieldEvent[]
+  staff_links          FacilityStaffLink[]
+  company_links        CompanyFacility[]
 }
 
 model CallCycle {
@@ -1364,6 +1372,94 @@ enum PharmacyStaffRole {
 }
 
 enum PharmacyStaffStatus {
+  SUGGESTED
+  SUPERVISOR_APPROVED
+  APPROVED
+  REJECTED
+}
+
+// ─── Facility Staff master list ────────────────────────────────────────────────
+// Mirrors PharmacyStaff. Procurement officers, dispensers, and admins at
+// hospitals/health centres. Reps suggest contacts; supervisor + admin approve.
+
+model FacilityStaff {
+  id                          String              @id @default(uuid())
+  name                        String
+  role                        FacilityStaffRole
+  phone                       String?
+  notes                       String?
+  status                      FacilityStaffStatus @default(SUGGESTED)
+  suggested_by                User                @relation("FacilityStaffSuggestedBy", fields: [suggested_by_id], references: [id])
+  suggested_by_id             String
+  supervisor_approved_by      User?               @relation("FacilityStaffSupervisorApproved", fields: [supervisor_approved_by_id], references: [id])
+  supervisor_approved_by_id   String?
+  supervisor_approved_at      DateTime?
+  admin_approved_by           User?               @relation("FacilityStaffAdminApproved", fields: [admin_approved_by_id], references: [id])
+  admin_approved_by_id        String?
+  admin_approved_at           DateTime?
+  review_note                 String?
+  facility_links              FacilityStaffLink[]
+  created_at                  DateTime            @default(now())
+  updated_at                  DateTime?           @updatedAt
+
+  @@index([status])
+}
+
+// Junction: one staff member can work at multiple facilities
+model FacilityStaffLink {
+  id          String        @id @default(uuid())
+  staff       FacilityStaff @relation(fields: [staff_id], references: [id])
+  staff_id    String
+  facility    Facility      @relation(fields: [facility_id], references: [id])
+  facility_id String
+  is_primary  Boolean       @default(false)
+  linked_at   DateTime      @default(now())
+
+  @@unique([staff_id, facility_id])
+  @@index([facility_id])
+}
+
+// ─── Company curated lists ─────────────────────────────────────────────────────
+// A company selects which pharmacies and facilities are relevant to their reps.
+// Mirrors CompanyDoctor — reps only see/visit entries on the company list.
+
+model CompanyPharmacy {
+  company_id  String
+  pharmacy_id String
+  company     Company    @relation(fields: [company_id], references: [id])
+  pharmacy    Pharmacy   @relation(fields: [pharmacy_id], references: [id])
+  tier        DoctorTier @default(B)
+  notes       String?
+  added_by    String?
+  added_at    DateTime   @default(now())
+
+  @@id([company_id, pharmacy_id])
+  @@index([company_id])
+}
+
+model CompanyFacility {
+  company_id  String
+  facility_id String
+  company     Company  @relation(fields: [company_id], references: [id])
+  facility    Facility @relation(fields: [facility_id], references: [id])
+  notes       String?
+  added_by    String?
+  added_at    DateTime @default(now())
+
+  @@id([company_id, facility_id])
+  @@index([company_id])
+}
+
+enum FacilityStaffRole {
+  Procurement
+  Dispenser
+  Pharmacist
+  Nurse
+  Admin
+  StoreManager
+}
+
+enum FacilityStaffStatus {
   SUGGESTED
   SUPERVISOR_APPROVED
   APPROVED
