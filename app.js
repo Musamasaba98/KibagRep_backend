@@ -34,6 +34,7 @@ import pharmacyStaffRouter from "./src/routes/pharmacystaff.route.js";
 import facilityStaffRouter from "./src/routes/facilitystaff.route.js";
 import companyPharmacyRouter from "./src/routes/companyPharmacy.route.js";
 import companyFacilityRouter from "./src/routes/companyFacility.route.js";
+import hcpRecordRouter      from "./src/routes/hcprecord.route.js";
 import { notFound, errorHandler } from "./src/middleware/error.middleware.js";
 
 const app = express();
@@ -106,6 +107,7 @@ app.use("/api/pharmacy-staff",   pharmacyStaffRouter);
 app.use("/api/facility-staff",   facilityStaffRouter);
 app.use("/api/company-pharmacy", companyPharmacyRouter);
 app.use("/api/company-facility", companyFacilityRouter);
+app.use("/api/hcp-records",     hcpRecordRouter);
 
 // Legacy report generator
 app.use("/api/report", reportRouter);
