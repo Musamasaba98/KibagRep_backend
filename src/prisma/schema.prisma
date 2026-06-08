@@ -198,12 +198,13 @@ model Doctor {
   company_doctors      CompanyDoctor[]
   recommendations      DoctorRecommendation[]
   tour_plan_entries    TourPlanEntry[]
-  work_facilities      DoctorFacility[]     @relation("DoctorWorksFacility")
-  license_number       String?              @unique
+  work_facilities      DoctorFacility[]       @relation("DoctorWorksFacility")
+  license_number       String?                @unique
   prescribing_level    PrescribingLevel?
   dispense_events      DispenseEvent[]
   competitor_intel     CompetitorIntel[]
   field_events         FieldEvent[]
+  hcp_record           HcpRecord?             // linked when doctor claims their government record
 }
 
 model Pharmacy {
@@ -1464,4 +1465,34 @@ enum FacilityStaffStatus {
   SUPERVISOR_APPROVED
   APPROVED
   REJECTED
+}
+
+// ─── Government HCP Registry ───────────────────────────────────────────────────
+// All 119,244 health professionals scraped from ehealthlicense.go.ug.
+// Covers UMDPC (doctors/dentists), UNMC (nurses/midwives), AHPC (allied health).
+// Read-only reference layer — used for verification and the doctor profile-claiming flow.
+// When a doctor claims their profile, HcpRecord.doctor_id links to their Doctor record.
+
+model HcpRecord {
+  id                  String    @id @default(uuid())
+  portal_id           String    @unique    // ehealthlicense data-key (numeric string)
+  name                String
+  council             String               // full council name from portal
+  registration_no     String
+  registration_status String?
+  registration_date   DateTime?
+  license_number      String?
+  license_expiry      DateTime?
+  licence_status      String?
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+
+  // Set when a field Doctor record is matched/claimed against this government entry
+  doctor              Doctor?   @relation(fields: [doctor_id], references: [id])
+  doctor_id           String?   @unique
+
+  @@index([name])
+  @@index([registration_no])
+  @@index([council])
+  @@index([licence_status])
 }
