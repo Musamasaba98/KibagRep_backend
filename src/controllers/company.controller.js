@@ -8,7 +8,27 @@ import {
 import prisma from "../config/prisma.config.js";
 import asyncHandler from "express-async-handler";
 
-export const createCompany = createOne("company");
+// Override factory createOne to auto-set 30-day trial on company creation
+export const createCompany = asyncHandler(async (req, res) => {
+  const { company_name, location, latitude, longitude } = req.body;
+  if (!company_name || !location) {
+    res.status(400); throw new Error("company_name and location are required");
+  }
+  const trialEndsAt = new Date();
+  trialEndsAt.setDate(trialEndsAt.getDate() + 30);
+
+  const company = await prisma.company.create({
+    data: {
+      company_name,
+      location,
+      ...(latitude  !== undefined && { latitude:  Number(latitude)  }),
+      ...(longitude !== undefined && { longitude: Number(longitude) }),
+      saas_plan: "TRIAL",
+      trial_ends_at: trialEndsAt,
+    },
+  });
+  res.status(201).json({ success: true, data: company });
+});
 export const getCompany = getOne("company");
 export const getAllCompany = getAll("company");
 export const deleteCompany = deleteOne("company");

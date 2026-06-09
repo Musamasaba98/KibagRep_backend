@@ -107,6 +107,31 @@ export const addUserToCompany = asyncHandler(async (req, res) => {
   }
   const target = await prisma.user.findUnique({ where: { id: userId } });
   if (!target) return res.status(404).json({ success: false, error: "User not found" });
+
+  // Enforce rep limit: warn if adding a MedicalRep would exceed the plan's rep_limit
+  // (Accept for current month; block only if already over limit)
+  let rep_limit_warning = null;
+  if (role === "MedicalRep") {
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { saas_plan: true },
+    });
+    if (company?.saas_plan && company.saas_plan !== "TRIAL" && company.saas_plan !== "ENTERPRISE") {
+      const planConfig = await prisma.planConfig.findUnique({
+        where: { plan: company.saas_plan },
+        select: { rep_limit: true },
+      });
+      if (planConfig?.rep_limit) {
+        const currentReps = await prisma.user.count({
+          where: { company_id: companyId, role: "MedicalRep" },
+        });
+        if (currentReps >= planConfig.rep_limit) {
+          rep_limit_warning = `You have ${currentReps} reps — your ${company.saas_plan} plan allows ${planConfig.rep_limit}. This rep has been added for the current month. Please upgrade your plan before the next billing cycle.`;
+        }
+      }
+    }
+  }
+
   const updated = await prisma.user.update({
     where: { id: userId },
     data: { company_id: companyId, role, ...(team_id ? { team_id } : {}) },
@@ -123,7 +148,7 @@ export const addUserToCompany = asyncHandler(async (req, res) => {
     if (supervisorCount >= 2 && teamCount === 0) requires_teams = true;
   }
 
-  res.json({ success: true, data: updated, requires_teams });
+  res.json({ success: true, data: updated, requires_teams, rep_limit_warning });
 });
 
 // PUT /api/user/company/:userId — update role or team for a company member

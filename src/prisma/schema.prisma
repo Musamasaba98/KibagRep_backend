@@ -149,6 +149,14 @@ model Company {
   is_active            Boolean                @default(true)
   date_of_joining      DateTime               @default(now())
   updatedAt            DateTime?              @updatedAt
+
+  // Subscription / plan
+  saas_plan            SaasPlan               @default(TRIAL)
+  trial_ends_at        DateTime?
+  plan_activated_at    DateTime?
+  plan_expires_at      DateTime?
+  is_locked            Boolean                @default(false)
+  lock_reason          String?
 }
 
 model Product {
@@ -391,6 +399,32 @@ model ProcurementItem {
   quantity   Int
   unit_price Float?
   notes      String?
+}
+
+enum SaasPlan {
+  TRIAL
+  STARTER
+  GROWTH
+  ENTERPRISE
+  SUSPENDED
+}
+
+// ─── Plan configuration (SUPER_ADMIN editable) ────────────────────────────────
+// Stores display settings for each plan tier. Features array is display-only
+// for the pricing page — actual enforcement is code-based per plan name.
+model PlanConfig {
+  id                   String    @id @default(uuid())
+  plan                 SaasPlan  @unique
+  display_name         String
+  price_ugx            Int?      // null = negotiated/custom
+  show_price           Boolean   @default(true)
+  rep_limit            Int?      // null = unlimited
+  setup_fee_ugx        Int?      // one-time onboarding fee shown on pricing page
+  annual_discount_pct  Int       @default(17)
+  features             String[]  // display-only for pricing page
+  is_active            Boolean   @default(true)
+  updated_at           DateTime  @updatedAt
+  created_at           DateTime  @default(now())
 }
 
 enum OrderStatus {
