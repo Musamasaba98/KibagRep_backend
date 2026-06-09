@@ -32,6 +32,20 @@ export const unsubscribe = asyncHandler(async (req, res) => {
   res.json({ success: true });
 });
 
+// POST /api/push/test — sends a test notification to the calling user's subscribed devices
+export const testPush = asyncHandler(async (req, res) => {
+  const { sent, failed } = await sendPushToUsers([req.user.id], {
+    title: "Test Notification 🔔",
+    body: "Push notifications are working correctly on this device.",
+    url: "/rep-page",
+    tag: "test",
+  });
+  if (sent === 0 && failed === 0) {
+    res.status(404); throw new Error("No push subscriptions found for this account. Enable notifications first.");
+  }
+  res.json({ success: true, sent, failed });
+});
+
 // Internal utility — called by the cron job
 export const sendPushToUsers = async (userIds, payload) => {
   const subs = await prisma.pushSubscription.findMany({
