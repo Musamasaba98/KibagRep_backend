@@ -12,6 +12,8 @@ import {
   removePharmacy,
   assignRep,
   unassignRep,
+  assignTeam,
+  unassignTeam,
   linkDoctorFacility,
   unlinkDoctorFacility,
 } from "../controllers/territory.controller.js";
@@ -43,6 +45,10 @@ router.delete("/:id/pharmacies/:pharmacyId", requireRole(MANAGERS), removePharma
 // Rep assignment (many-to-many)
 router.post(  "/:id/reps",          requireRole(MANAGERS), assignRep);
 router.delete("/:id/reps/:userId",  requireRole(MANAGERS), unassignRep);
+
+// Team assignment (many-to-many)
+router.post(  "/:id/teams",         requireRole(MANAGERS), assignTeam);
+router.delete("/:id/teams/:teamId", requireRole(MANAGERS), unassignTeam);
 
 // Doctor–Facility M2M (shared HCP layer)
 router.post(  "/doctor-facility", requireRole(["SALES_ADMIN", "SUPER_ADMIN"]), linkDoctorFacility);

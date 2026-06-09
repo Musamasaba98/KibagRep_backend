@@ -239,17 +239,18 @@ model Pharmacy {
 }
 
 model Team {
-  id               String        @id @default(uuid())
+  id               String          @id @default(uuid())
   team_name        String
-  company          Company?      @relation(fields: [company_id], references: [id])
+  company          Company?        @relation(fields: [company_id], references: [id])
   company_id       String?
   users            User[]
   team_products    TeamProduct[]
   monthly_plans    MonthlyPlan[]
-  supervisor       User?         @relation("TeamSupervisor", fields: [supervisor_id], references: [id])
+  supervisor       User?           @relation("TeamSupervisor", fields: [supervisor_id], references: [id])
   supervisor_id    String?
-  date_of_creation DateTime      @default(now())
-  updatedAt        DateTime?     @updatedAt
+  territories      TerritoryTeam[]
+  date_of_creation DateTime        @default(now())
+  updatedAt        DateTime?       @updatedAt
 
   @@index([company_id])
 }
@@ -680,8 +681,19 @@ model Territory {
   facilities     TerritoryFacility[]
   pharmacies     TerritoryPharmacy[]
   reps           UserTerritory[]
+  teams          TerritoryTeam[]
   created_at     DateTime            @default(now())
   updated_at     DateTime?           @updatedAt
+}
+
+model TerritoryTeam {
+  territory    Territory @relation(fields: [territory_id], references: [id], onDelete: Cascade)
+  territory_id String
+  team         Team      @relation(fields: [team_id], references: [id], onDelete: Cascade)
+  team_id      String
+  assigned_at  DateTime  @default(now())
+
+  @@id([territory_id, team_id])
 }
 
 model UserTerritory {

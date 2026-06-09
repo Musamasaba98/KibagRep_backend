@@ -37,6 +37,11 @@ const TERRITORY_INCLUDE = {
       },
     },
   },
+  teams: {
+    include: {
+      team: { select: { id: true, team_name: true, supervisor_id: true } },
+    },
+  },
 };
 
 // ─── GET /api/territory ───────────────────────────────────────────────────────
@@ -54,17 +59,38 @@ export const getTerritories = asyncHandler(async (req, res) => {
 });
 
 // ─── GET /api/territory/my ────────────────────────────────────────────────────
-// Rep gets all territories assigned to them
+// Returns all territories directly assigned to the rep OR assigned to their team
 export const getMyTerritory = asyncHandler(async (req, res) => {
   const userId = req.user.id;
 
-  const assignments = await prisma.userTerritory.findMany({
+  // Direct rep assignments
+  const directAssignments = await prisma.userTerritory.findMany({
     where: { user_id: userId },
     include: { territory: { include: TERRITORY_INCLUDE } },
   });
 
-  const territories = assignments.map(a => normalise(a.territory));
-  res.json({ success: true, data: territories });
+  // Team-based assignments — find the rep's team(s), then their territories
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { team_id: true },
+  });
+
+  let teamTerritories = [];
+  if (user?.team_id) {
+    const teamLinks = await prisma.territoryTeam.findMany({
+      where: { team_id: user.team_id },
+      include: { territory: { include: TERRITORY_INCLUDE } },
+    });
+    teamTerritories = teamLinks.map(tt => tt.territory);
+  }
+
+  // Merge, deduplicate by territory id
+  const directTerritories = directAssignments.map(a => a.territory);
+  const all = [...directTerritories, ...teamTerritories];
+  const seen = new Set();
+  const territories = all.filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
+
+  res.json({ success: true, data: territories.map(normalise) });
 });
 
 // ─── POST /api/territory ──────────────────────────────────────────────────────
@@ -309,6 +335,51 @@ export const unlinkDoctorFacility = asyncHandler(async (req, res) => {
 function normalise(t) {
   return {
     ...t,
-    reps: (t.reps ?? []).map(r => r.user),
+    reps:  (t.reps  ?? []).map(r => r.user),
+    teams: (t.teams ?? []).map(tt => tt.team),
   };
 }
+
+// ─── POST /api/territory/:id/teams ───────────────────────────────────────────
+export const assignTeam = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { team_id } = req.body;
+  const companyId = req.user.company_id;
+
+  if (!team_id) return res.status(400).json({ success: false, error: "team_id required" });
+
+  const [territory, team] = await Promise.all([
+    prisma.territory.findUnique({ where: { id } }),
+    prisma.team.findUnique({ where: { id: team_id } }),
+  ]);
+
+  if (!territory || territory.company_id !== companyId)
+    return res.status(404).json({ success: false, error: "Territory not found" });
+  if (!team || team.company_id !== companyId)
+    return res.status(404).json({ success: false, error: "Team not found" });
+
+  const link = await prisma.territoryTeam.upsert({
+    where: { territory_id_team_id: { territory_id: id, team_id } },
+    create: { territory_id: id, team_id },
+    update: {},
+    include: { team: { select: { id: true, team_name: true } } },
+  });
+
+  res.status(201).json({ success: true, data: link.team });
+});
+
+// ─── DELETE /api/territory/:id/teams/:teamId ─────────────────────────────────
+export const unassignTeam = asyncHandler(async (req, res) => {
+  const { id, teamId } = req.params;
+  const companyId = req.user.company_id;
+
+  const territory = await prisma.territory.findUnique({ where: { id } });
+  if (!territory || territory.company_id !== companyId)
+    return res.status(404).json({ success: false, error: "Territory not found" });
+
+  await prisma.territoryTeam.delete({
+    where: { territory_id_team_id: { territory_id: id, team_id: teamId } },
+  });
+
+  res.json({ success: true });
+});

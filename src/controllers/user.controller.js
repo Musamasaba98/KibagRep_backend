@@ -112,7 +112,18 @@ export const addUserToCompany = asyncHandler(async (req, res) => {
     data: { company_id: companyId, role, ...(team_id ? { team_id } : {}) },
     select: { id: true, username: true, firstname: true, lastname: true, role: true, company_id: true },
   });
-  res.json({ success: true, data: updated });
+
+  // Warn when company reaches 2+ supervisors with no teams yet
+  let requires_teams = false;
+  if (role === "Supervisor") {
+    const [supervisorCount, teamCount] = await Promise.all([
+      prisma.user.count({ where: { company_id: companyId, role: "Supervisor" } }),
+      prisma.team.count({ where: { company_id: companyId } }),
+    ]);
+    if (supervisorCount >= 2 && teamCount === 0) requires_teams = true;
+  }
+
+  res.json({ success: true, data: updated, requires_teams });
 });
 
 // PUT /api/user/company/:userId — update role or team for a company member
