@@ -218,6 +218,7 @@ model Pharmacy {
   contact              String?
   latitude             Float?
   longitude            Float?
+  gps_source           String?
   is_active            Boolean              @default(true)
   stock_trackings      StockTracking[]
   updatedAt            DateTime?            @updatedAt
@@ -430,6 +431,7 @@ model Facility {
   description          String?
   latitude             Float?
   longitude            Float?
+  gps_source           String?
   doctor_id            String?
   doctor               Doctor?              @relation(fields: [doctor_id], references: [id])
   users                User[]
