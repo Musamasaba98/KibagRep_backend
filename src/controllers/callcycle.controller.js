@@ -6,17 +6,36 @@ import asyncHandler from "express-async-handler";
 // GET /api/cycle/current?month=&year= — get or create cycle for given month (defaults to current month)
 export const getCurrentCycle = asyncHandler(async (req, res) => {
   const userId = req.user.id;
+  const companyId = req.user.company_id;
   const now = new Date();
   const month = req.query.month ? parseInt(req.query.month) : now.getMonth() + 1;
   const year  = req.query.year  ? parseInt(req.query.year)  : now.getFullYear();
+
+  const doctorSelect = {
+    id: true, doctor_name: true, town: true, location: true, speciality: true,
+    facility: {
+      select: {
+        territory_links: {
+          where: { territory: { company_id: companyId } },
+          select: { territory: { select: { territory_type: true } } },
+          take: 1,
+        },
+      },
+    },
+    ...(companyId ? {
+      company_tiers: {
+        where: { company_id: companyId },
+        select: { tier: true, visit_frequency: true, notes: true },
+        take: 1,
+      },
+    } : {}),
+  };
 
   let cycle = await prisma.callCycle.findUnique({
     where: { user_id_month_year: { user_id: userId, month, year } },
     include: {
       items: {
-        include: {
-          doctor: { select: { id: true, doctor_name: true, town: true, location: true, speciality: true } },
-        },
+        include: { doctor: { select: doctorSelect } },
         orderBy: [{ tier: "asc" }, { visits_done: "asc" }],
       },
     },
@@ -26,22 +45,41 @@ export const getCurrentCycle = asyncHandler(async (req, res) => {
     cycle = await prisma.callCycle.create({
       data: { user_id: userId, month, year },
       include: {
-        items: {
-          include: {
-            doctor: { select: { id: true, doctor_name: true, town: true, location: true, speciality: true } },
-          },
-        },
+        items: { include: { doctor: { select: doctorSelect } } },
       },
     });
   }
 
-  res.status(200).json({ success: true, data: cycle });
+  // Flatten company_tier and territory_type onto each item for the frontend
+  const data = {
+    ...cycle,
+    items: cycle.items.map((item) => {
+      const companyTier = item.doctor.company_tiers?.[0] ?? null;
+      const territoryType = item.doctor.facility?.territory_links?.[0]?.territory?.territory_type ?? null;
+      return {
+        ...item,
+        tier: companyTier?.tier ?? item.tier,
+        doctor: {
+          id: item.doctor.id,
+          doctor_name: item.doctor.doctor_name,
+          town: item.doctor.town,
+          location: item.doctor.location,
+          speciality: item.doctor.speciality,
+        },
+        company_tier: companyTier,
+        territory_type: territoryType,
+      };
+    }),
+  };
+
+  res.status(200).json({ success: true, data });
 });
 
 // POST /api/cycle/current/items — add a doctor to the current cycle
 export const addCycleItem = asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { doctor_id, tier = "B", list_type = "BL", frequency } = req.body;
+  const companyId = req.user.company_id;
+  const { doctor_id, tier: tierOverride, list_type: listTypeOverride, frequency } = req.body;
 
   if (!doctor_id) {
     res.status(400);
@@ -64,6 +102,37 @@ export const addCycleItem = asyncHandler(async (req, res) => {
   if (cycle.status === "LOCKED" || cycle.status === "APPROVED") {
     res.status(403);
     throw new Error("Cycle is approved — contact your supervisor to make changes");
+  }
+
+  // Derive tier from the company's classification for this doctor (fallback: B)
+  let tier = tierOverride ?? "B";
+  if (!tierOverride && companyId) {
+    const companyTier = await prisma.doctorCompanyTier.findUnique({
+      where: { doctor_id_company_id: { doctor_id, company_id: companyId } },
+    });
+    if (companyTier) tier = companyTier.tier;
+  }
+
+  // Derive list_type from the territory type of the doctor's facility
+  // TOWN → KBL, UPCOUNTRY → BL, REGIONAL → BL (badge hidden in UI)
+  let list_type = listTypeOverride ?? "BL";
+  if (!listTypeOverride && companyId) {
+    const doctor = await prisma.doctor.findUnique({
+      where: { id: doctor_id },
+      select: { facility_id: true },
+    });
+    if (doctor?.facility_id) {
+      const link = await prisma.territoryFacility.findFirst({
+        where: {
+          facility_id: doctor.facility_id,
+          territory: { company_id: companyId },
+        },
+        select: { territory: { select: { territory_type: true } } },
+      });
+      if (link) {
+        list_type = link.territory.territory_type === "TOWN" ? "KBL" : "BL";
+      }
+    }
   }
 
   const freqMap = { A: 4, B: 2, C: 1 };

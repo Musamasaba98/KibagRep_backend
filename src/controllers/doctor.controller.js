@@ -260,6 +260,22 @@ export const setDoctorTier = asyncHandler(async (req, res) => {
     },
   });
 
+  // Propagate tier change to all active (non-approved) cycle items for this doctor in this company
+  const freqMap = { A: 4, B: 2, C: 1 };
+  await prisma.callCycleItem.updateMany({
+    where: {
+      doctor_id,
+      cycle: {
+        status: { in: ["DRAFT", "SUBMITTED"] },
+        user: { company_id },
+      },
+    },
+    data: {
+      tier,
+      frequency: freqMap[tier] ?? 2,
+    },
+  });
+
   res.status(200).json({ success: true, data: record });
 });
 
