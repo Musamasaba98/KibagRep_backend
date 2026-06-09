@@ -57,7 +57,7 @@ router.get("/", asyncHandler(async (req, res) => {
     prisma.pharmacy.count({ where }),
     prisma.pharmacy.findMany({
       where,
-      select: { id: true, pharmacy_name: true, location: true, town: true, district: true, region: true, pharmacy_type: true, contact: true },
+      select: { id: true, pharmacy_name: true, location: true, town: true, district: true, region: true, pharmacy_type: true, contact: true, latitude: true, longitude: true, gps_source: true },
       orderBy: { pharmacy_name: "asc" },
       skip: (pg - 1) * lm,
       take: lm,

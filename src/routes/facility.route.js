@@ -41,7 +41,7 @@ router.get("/", asyncHandler(async (req, res) => {
     prisma.facility.count({ where }),
     prisma.facility.findMany({
       where,
-      select: { id: true, name: true, facility_type: true, town: true, district: true, region: true, ownership: true, latitude: true, longitude: true },
+      select: { id: true, name: true, facility_type: true, town: true, district: true, region: true, ownership: true, latitude: true, longitude: true, gps_source: true },
       orderBy: { name: "asc" },
       skip: (pg - 1) * lm,
       take: lm,
