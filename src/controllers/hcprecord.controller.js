@@ -44,6 +44,7 @@ export const listHcpRecords = asyncHandler(async (req, res) => {
         license_expiry:      true,
         licence_status:      true,
         doctor_id:           true,
+        doctor:              { select: { id: true, doctor_name: true, cadre: true } },
       },
     }),
     prisma.hcpRecord.count({ where }),
@@ -54,6 +55,32 @@ export const listHcpRecords = asyncHandler(async (req, res) => {
     data: records,
     meta: { total, page: parseInt(page), limit: take, pages: Math.ceil(total / take) },
   });
+});
+
+// PUT /api/hcp-records/:id — link or unlink a registry record to a master directory doctor
+export const linkHcpRecord = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { doctor_id } = req.body; // null to unlink
+
+  if (doctor_id) {
+    const conflict = await prisma.hcpRecord.findUnique({ where: { doctor_id } });
+    if (conflict && conflict.id !== id) {
+      res.status(409);
+      throw new Error("This doctor is already linked to another registry record.");
+    }
+  }
+
+  const updated = await prisma.hcpRecord.update({
+    where: { id },
+    data: { doctor_id: doctor_id ?? null },
+    select: {
+      id:        true,
+      doctor_id: true,
+      doctor:    { select: { id: true, doctor_name: true, cadre: true } },
+    },
+  });
+
+  res.json({ success: true, data: updated });
 });
 
 // GET /api/hcp-records/stats  — council + licence breakdown for dashboard
