@@ -347,7 +347,7 @@ export const getTierCoverage = asyncHandler(async (req, res) => {
     tier,
     planned:    stats[tier].planned,
     done:       stats[tier].done,
-    actual_visits: actsByTier[tier as keyof typeof actsByTier],
+    actual_visits: actsByTier[tier] ?? 0,
     coverage_pct: stats[tier].planned > 0
       ? Math.round((stats[tier].done / stats[tier].planned) * 100)
       : null,
