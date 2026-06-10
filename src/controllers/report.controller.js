@@ -1,5 +1,147 @@
 import asyncHandler from "express-async-handler";
 import { createWorkbook } from "../utils/excel.util.js";
+import {
+  createWorksheet,
+  generateFeedbackSection,
+  generatePharmacyCoverageSection,
+} from "../utils/worksheet.util.js";
+import prisma from "../config/prisma.config.js";
+
+// ── GET /api/report/visit-trend?days=30 ──────────────────────────────────────
+// Returns daily visit totals for the last N days (company-wide).
+export const getVisitTrend = asyncHandler(async (req, res) => {
+  const { company_id } = req.user;
+  const days  = Math.min(parseInt(req.query.days) || 30, 90);
+  const since = new Date(Date.now() - days * 86_400_000);
+  since.setUTCHours(0, 0, 0, 0);
+
+  const companyUserIds = (
+    await prisma.user.findMany({ where: { company_id }, select: { id: true } })
+  ).map((u) => u.id);
+
+  const [docGroups, pharmGroups] = await Promise.all([
+    prisma.doctorActivity.groupBy({
+      by: ["date"],
+      where: { user_id: { in: companyUserIds }, date: { gte: since } },
+      _count: { id: true },
+      orderBy: { date: "asc" },
+    }),
+    prisma.pharmacyActivity.groupBy({
+      by: ["date"],
+      where: { user_id: { in: companyUserIds }, date: { gte: since } },
+      _count: { id: true },
+      orderBy: { date: "asc" },
+    }),
+  ]);
+
+  // Merge into daily map
+  const map = {};
+  docGroups.forEach((g) => {
+    const key = new Date(g.date).toISOString().slice(0, 10);
+    map[key] = { date: key, doctor_visits: g._count.id, pharmacy_visits: 0 };
+  });
+  pharmGroups.forEach((g) => {
+    const key = new Date(g.date).toISOString().slice(0, 10);
+    if (!map[key]) map[key] = { date: key, doctor_visits: 0, pharmacy_visits: 0 };
+    map[key].pharmacy_visits = g._count.id;
+  });
+
+  const data = Object.values(map)
+    .map((d) => ({ ...d, total: d.doctor_visits + d.pharmacy_visits }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  res.json({ success: true, data });
+});
+
+// ── GET /api/report/product-detailing?month=&year= ───────────────────────────
+// Top products by detailing frequency company-wide this month.
+export const getProductDetailing = asyncHandler(async (req, res) => {
+  const { company_id } = req.user;
+  const now   = new Date();
+  const month = parseInt(req.query.month) || now.getMonth() + 1;
+  const year  = parseInt(req.query.year)  || now.getFullYear();
+
+  const periodStart = new Date(Date.UTC(year, month - 1, 1));
+  const periodEnd   = new Date(Date.UTC(year, month, 1));
+
+  const companyUserIds = (
+    await prisma.user.findMany({ where: { company_id }, select: { id: true } })
+  ).map((u) => u.id);
+
+  // Count activities where product appears in products_detailed
+  const acts = await prisma.doctorActivity.findMany({
+    where: { user_id: { in: companyUserIds }, date: { gte: periodStart, lt: periodEnd } },
+    select: {
+      focused_product_id: true,
+      products_detailed:  { select: { id: true, product_name: true } },
+    },
+  });
+
+  const freq = {};   // productId → { product_name, detailed, as_focus }
+  acts.forEach((act) => {
+    (act.products_detailed ?? []).forEach((p) => {
+      if (!freq[p.id]) freq[p.id] = { product_id: p.id, product_name: p.product_name, detailed: 0, as_focus: 0 };
+      freq[p.id].detailed++;
+    });
+    if (act.focused_product_id && freq[act.focused_product_id]) {
+      freq[act.focused_product_id].as_focus++;
+    }
+  });
+
+  const data = Object.values(freq).sort((a, b) => b.detailed - a.detailed);
+  res.json({ success: true, data });
+});
+
+// ── GET /api/report/anomalies?days=7 ─────────────────────────────────────────
+// Per-rep NCA count and GPS anomaly count for the last N days.
+export const getAnomalies = asyncHandler(async (req, res) => {
+  const { company_id } = req.user;
+  const days  = Math.min(parseInt(req.query.days) || 14, 60);
+  const since = new Date(Date.now() - days * 86_400_000);
+  since.setUTCHours(0, 0, 0, 0);
+
+  const reps = await prisma.user.findMany({
+    where: { company_id, role: "MedicalRep" },
+    select: { id: true, firstname: true, lastname: true },
+    orderBy: { firstname: "asc" },
+  });
+
+  const repIds = reps.map((r) => r.id);
+
+  const [ncaGroups, gpsGroups, lastNca] = await Promise.all([
+    prisma.doctorActivity.groupBy({
+      by: ["user_id"],
+      where: { user_id: { in: repIds }, date: { gte: since }, nca_reason: { not: null } },
+      _count: { id: true },
+    }),
+    prisma.doctorActivity.groupBy({
+      by: ["user_id"],
+      where: { user_id: { in: repIds }, date: { gte: since }, gps_anomaly: true },
+      _count: { id: true },
+    }),
+    prisma.doctorActivity.groupBy({
+      by: ["user_id"],
+      where: { user_id: { in: repIds }, nca_reason: { not: null } },
+      _max: { date: true },
+    }),
+  ]);
+
+  const ncaMap  = Object.fromEntries(ncaGroups.map((g) => [g.user_id, g._count.id]));
+  const gpsMap  = Object.fromEntries(gpsGroups.map((g) => [g.user_id, g._count.id]));
+  const lastMap = Object.fromEntries(lastNca.map((g) => [g.user_id, g._max.date]));
+
+  const data = reps
+    .map((rep) => ({
+      user: rep,
+      nca_count:    ncaMap[rep.id]  ?? 0,
+      gps_count:    gpsMap[rep.id]  ?? 0,
+      last_nca_date: lastMap[rep.id] ?? null,
+    }))
+    .filter((r) => r.nca_count > 0 || r.gps_count > 0)
+    .sort((a, b) => (b.nca_count + b.gps_count) - (a.nca_count + a.gps_count));
+
+  res.json({ success: true, data, days });
+});
 
 // ── GET /api/report/my-summary?month=&year= ───────────────────────────────
 // Returns monthly performance stats for the requesting rep.
@@ -94,13 +236,6 @@ export const getMySummary = asyncHandler(async (req, res) => {
     },
   });
 });
-import {
-  createWorksheet,
-  generateFeedbackSection,
-  generatePharmacyCoverageSection,
-} from "../utils/worksheet.util.js";
-import prisma from "../config/prisma.config.js";
-
 // Derive abbreviation: first uppercase letters, or first 4 consonants
 const abbr = (name = "") =>
   name.replace(/[aeiou\s]/gi, "").slice(0, 4).toUpperCase() || name.slice(0, 3).toUpperCase();
