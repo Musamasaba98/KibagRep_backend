@@ -331,7 +331,22 @@ export const getPendingCycles = asyncHandler(async (req, res) => {
     orderBy: { created_at: "desc" },
   });
 
-  res.status(200).json({ success: true, data: cycles });
+  // Resolve approver names for cycles that have been approved/rejected
+  const approverIds = [...new Set(cycles.map((c) => c.approved_by).filter(Boolean))];
+  const approvers = approverIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: approverIds } },
+        select: { id: true, firstname: true, lastname: true, role: true },
+      })
+    : [];
+  const approverMap = Object.fromEntries(approvers.map((u) => [u.id, u]));
+
+  const data = cycles.map((c) => ({
+    ...c,
+    approved_by_user: c.approved_by ? (approverMap[c.approved_by] ?? null) : null,
+  }));
+
+  res.status(200).json({ success: true, data });
 });
 
 // PUT /api/cycle/:id/approve — supervisor approves and locks the cycle
