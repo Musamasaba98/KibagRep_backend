@@ -1,10 +1,12 @@
 import express from 'express';
 import { protect, requireRole } from '../middleware/auth.middleware.js';
-import { generateReport } from '../controllers/report.controller.js';
+import { generateReport, getMySummary } from '../controllers/report.controller.js';
 
 const router = express.Router();
 
 router.use(protect);
+
+router.get('/my-summary', getMySummary);
 
 router.get(
   '/generate-report',

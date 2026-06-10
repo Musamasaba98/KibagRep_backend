@@ -1,5 +1,99 @@
 import asyncHandler from "express-async-handler";
 import { createWorkbook } from "../utils/excel.util.js";
+
+// ── GET /api/report/my-summary?month=&year= ───────────────────────────────
+// Returns monthly performance stats for the requesting rep.
+export const getMySummary = asyncHandler(async (req, res) => {
+  const userId    = req.user.id;
+  const now       = new Date();
+  const month     = parseInt(req.query.month) || now.getMonth() + 1;
+  const year      = parseInt(req.query.year)  || now.getFullYear();
+
+  const periodStart = new Date(Date.UTC(year, month - 1, 1));
+  const periodEnd   = new Date(Date.UTC(year, month, 1));
+
+  const [
+    doctorVisits,
+    pharmacyVisits,
+    samplesAgg,
+    ncaCount,
+    reports,
+    callCycle,
+    sampleBalances,
+  ] = await Promise.all([
+    prisma.doctorActivity.count({
+      where: { user_id: userId, date: { gte: periodStart, lt: periodEnd }, nca_reason: null },
+    }),
+    prisma.pharmacyActivity.count({
+      where: { user_id: userId, date: { gte: periodStart, lt: periodEnd } },
+    }),
+    prisma.doctorActivity.aggregate({
+      where: { user_id: userId, date: { gte: periodStart, lt: periodEnd }, nca_reason: null },
+      _sum: { samples_given: true },
+    }),
+    prisma.doctorActivity.count({
+      where: { user_id: userId, date: { gte: periodStart, lt: periodEnd }, nca_reason: { not: null } },
+    }),
+    prisma.dailyReport.findMany({
+      where: { user_id: userId, report_date: { gte: periodStart, lt: periodEnd } },
+      select: { status: true },
+    }),
+    prisma.callCycle.findUnique({
+      where: { user_id_month_year: { user_id: userId, month, year } },
+      select: {
+        status: true,
+        items: { select: { visits_done: true, target_visits: true, tier: true } },
+      },
+    }),
+    prisma.sampleBalance.findMany({
+      where: { user_id: userId },
+      include: { product: { select: { id: true, product_name: true } } },
+    }),
+  ]);
+
+  // Count working days up to today in this month
+  const today = now < periodEnd ? now : new Date(periodEnd.getTime() - 1);
+  let workingDays = 0;
+  const cursor = new Date(periodStart);
+  while (cursor <= today) {
+    const dow = cursor.getUTCDay();
+    if (dow !== 0 && dow !== 6) workingDays++;
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  const submitted = reports.filter((r) => r.status !== "DRAFT").length;
+  const approved  = reports.filter((r) => r.status === "APPROVED").length;
+
+  // Call cycle coverage
+  const cyclePlanned = callCycle?.items.length ?? 0;
+  const cycleVisited = callCycle?.items.filter((i) => i.visits_done >= 1).length ?? 0;
+
+  res.json({
+    success: true,
+    data: {
+      month, year,
+      doctor_visits: doctorVisits,
+      pharmacy_visits: pharmacyVisits,
+      total_visits: doctorVisits + pharmacyVisits,
+      samples_given: samplesAgg._sum.samples_given ?? 0,
+      nca_count: ncaCount,
+      working_days: workingDays,
+      reports_submitted: submitted,
+      reports_approved: approved,
+      cycle_planned: cyclePlanned,
+      cycle_visited: cycleVisited,
+      cycle_status: callCycle?.status ?? null,
+      sample_balances: sampleBalances.map((b) => ({
+        id: b.id,
+        product_id: b.product_id,
+        product_name: b.product?.product_name ?? "",
+        issued: b.issued,
+        given: b.given,
+        remaining: b.issued - b.given,
+      })),
+    },
+  });
+});
 import {
   createWorksheet,
   generateFeedbackSection,
