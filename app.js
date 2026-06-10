@@ -1,6 +1,9 @@
+import * as Sentry from "@sentry/node";
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import dotenv from 'dotenv'
 import authRouter from "./src/routes/auth.route.js";
 import reportRouter from "./src/routes/report.route.js";
@@ -40,14 +43,46 @@ import { notFound, errorHandler } from "./src/middleware/error.middleware.js";
 
 const app = express();
 dotenv.config();
+
+// ─── Security headers ─────────────────────────────────────────────────────────
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },  // allow images/fonts from CDN
+  contentSecurityPolicy: false,                           // CSP handled by frontend
+}));
+
+// ─── CORS ─────────────────────────────────────────────────────────────────────
 const allowedOrigin = (process.env.CLIENT_URL || "http://localhost:5173").replace(/\/$/, "");
 app.use(cors({ origin: allowedOrigin, credentials: true }));
-app.use(morgan("dev"));
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
 
-// Auth (public)
-app.use("/api/auth", authRouter);
+// ─── Rate limiting ────────────────────────────────────────────────────────────
+// Auth endpoints: tighter — 10 attempts per 15 min per IP
+export const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: "Too many attempts. Try again in 15 minutes." },
+  skip: () => process.env.NODE_ENV === "test",
+});
+
+// General API: 200 requests per 15 min per IP
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: "Too many requests. Please slow down." },
+  skip: () => process.env.NODE_ENV === "test",
+});
+
+app.use("/api", apiLimiter);
+
+app.use(morgan("dev"));
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: false, limit: "2mb" }));
+
+// Auth (public) — tighter rate limit on login/signup/reset
+app.use("/api/auth", authLimiter, authRouter);
 
 // User management
 app.use("/api/user", userRouter);
@@ -114,7 +149,8 @@ app.use("/api/plan",            planRouter);
 // Legacy report generator
 app.use("/api/report", reportRouter);
 
-// Error handling (must be last)
+// Error handling (Sentry must be before custom handlers)
+Sentry.setupExpressErrorHandler(app);
 app.use(notFound);
 app.use(errorHandler);
 

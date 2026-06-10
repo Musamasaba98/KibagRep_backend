@@ -1,3 +1,4 @@
+import "./src/instrument.js";   // Sentry must be first
 import app from "./app.js";
 import dotenv from 'dotenv'
 import "./src/cron/jobs.js";

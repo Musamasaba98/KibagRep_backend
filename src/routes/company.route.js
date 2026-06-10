@@ -1,5 +1,7 @@
 import express from "express";
 import { protect, requireRole } from "../middleware/auth.middleware.js";
+import { validate } from "../middleware/validate.middleware.js";
+import { CreateCompanySchema } from "../schemas/index.js";
 import {
   createCompany,
   deleteCompany,
@@ -19,7 +21,7 @@ router.get("/mine", protect, getMyCompany);
 router.get("/stats", protect, requireRole("SUPER_ADMIN"), getPlatformStats);
 
 router.get("/", protect, requireRole("SUPER_ADMIN"), getAllCompany);
-router.post("/", protect, requireRole("SUPER_ADMIN"), createCompany);
+router.post("/", protect, requireRole("SUPER_ADMIN"), validate(CreateCompanySchema), createCompany);
 router.get("/:id/users", protect, requireRole("SUPER_ADMIN"), getCompanyUsersById);
 router.put("/:id/toggle-active", protect, requireRole("SUPER_ADMIN"), toggleCompanyActive);
 router.get("/:id", protect, requireRole("SUPER_ADMIN","SALES_ADMIN","COUNTRY_MGR"), getCompany);

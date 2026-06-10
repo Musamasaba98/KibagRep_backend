@@ -1,5 +1,94 @@
 import { z } from "zod";
 
+const password = z.string().min(6, "Password must be at least 6 characters").max(128);
+const phone    = z.string().regex(/^\+?[0-9]{9,15}$/, "Invalid phone number").optional();
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+export const LoginSchema = z.object({
+  email:    z.string().email("Invalid email").toLowerCase().trim(),
+  password: z.string().min(1, "Password is required").max(128),
+});
+
+export const SignupSchema = z.object({
+  username:            z.string().min(3).max(50).trim(),
+  firstname:           z.string().min(1).max(100).trim(),
+  lastname:            z.string().min(1).max(100).trim(),
+  email:               z.string().email().toLowerCase().trim(),
+  password,
+  role:                z.string().min(1),
+  contact:             phone,
+  gender:              z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
+  company_id:          z.string().uuid().optional(),
+  must_reset_password: z.boolean().optional().default(false),
+});
+
+export const ChangePasswordSchema = z.object({
+  current_password: z.string().min(1, "Current password is required"),
+  new_password:     password,
+});
+
+export const ForgotPasswordSchema = z.object({
+  email: z.string().email("Invalid email").toLowerCase().trim(),
+});
+
+export const ResetPasswordSchema = z.object({
+  token:        z.string().min(1, "Token is required"),
+  new_password: password,
+});
+
+export const AdminResetPasswordSchema = z.object({
+  userId:       z.string().uuid("Invalid userId"),
+  new_password: password,
+});
+
+// ─── User / Company membership ────────────────────────────────────────────────
+export const AddUserToCompanySchema = z.object({
+  userId:     z.string().uuid("Invalid userId"),
+  role:       z.string().min(1, "Role is required"),
+  team_id:    z.string().uuid().optional(),
+  company_id: z.string().uuid().optional(),
+});
+
+export const UpdateMyProfileSchema = z.object({
+  firstname: z.string().min(1).max(100).trim().optional(),
+  lastname:  z.string().min(1).max(100).trim().optional(),
+  contact:   phone,
+});
+
+// ─── Company ──────────────────────────────────────────────────────────────────
+export const CreateCompanySchema = z.object({
+  company_name: z.string().min(2, "Company name required").max(200).trim(),
+  location:     z.string().min(2, "Location required").max(300).trim(),
+  latitude:     z.number().min(-90).max(90).optional(),
+  longitude:    z.number().min(-180).max(180).optional(),
+});
+
+// ─── Tour Plan ────────────────────────────────────────────────────────────────
+export const AddTourPlanEntrySchema = z.object({
+  entry_type:  z.enum(["DOCTOR", "PHARMACY", "FACILITY", "OTHER"]),
+  entity_id:   z.string().uuid().optional(),
+  entity_name: z.string().max(200).optional(),
+  notes:       z.string().max(500).optional(),
+  slot:        z.enum(["MORNING", "AFTERNOON", "EVENING"]).optional(),
+});
+
+export const UpdateTourPlanDaySchema = z.object({
+  plan_date: z.string().optional(),
+  notes:     z.string().max(500).optional(),
+});
+
+// ─── Pharmacy Activity ────────────────────────────────────────────────────────
+export const CreatePharmacyActivitySchema = z.object({
+  pharmacy_id:        z.string().uuid("pharmacy_id must be a valid UUID"),
+  focused_product_id: z.string().uuid().optional(),
+  products_detailed:  z.array(z.string().uuid()).optional().default([]),
+  stock_noted:        z.number().int().min(0).optional(),
+  orders_taken:       z.number().int().min(0).optional(),
+  notes:              z.string().max(2000).optional(),
+  gps_lat:            z.number().min(-90).max(90).nullable().optional(),
+  gps_lng:            z.number().min(-180).max(180).nullable().optional(),
+});
+
 // ─── Doctor Activity (Visit Log) ──────────────────────────────────────────────
 export const CreateActivitySchema = z.object({
   doctor_id: z.string().uuid("doctor_id must be a valid UUID"),

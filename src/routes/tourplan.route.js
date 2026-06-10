@@ -1,5 +1,7 @@
 import express from "express";
 import { protect, requireRole } from "../middleware/auth.middleware.js";
+import { validate } from "../middleware/validate.middleware.js";
+import { AddTourPlanEntrySchema, UpdateTourPlanDaySchema } from "../schemas/index.js";
 import {
   getCurrentTourPlan,
   getTodayTourPlanEntries,
@@ -18,8 +20,8 @@ router.use(protect);
 
 router.get("/current", getCurrentTourPlan);
 router.get("/today", getTodayTourPlanEntries);
-router.put("/:id/day", updateTourPlanDay);
-router.post("/:id/entries", addTourPlanEntry);
+router.put("/:id/day",     validate(UpdateTourPlanDaySchema), updateTourPlanDay);
+router.post("/:id/entries", validate(AddTourPlanEntrySchema), addTourPlanEntry);
 router.delete("/:id/entries/:entryId", removeTourPlanEntry);
 router.put("/:id/submit", submitTourPlan);
 router.get("/pending", requireRole(["Supervisor", "Manager", "COUNTRY_MGR", "SUPER_ADMIN"]), getPendingTourPlans);
