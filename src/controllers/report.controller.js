@@ -143,6 +143,462 @@ export const getAnomalies = asyncHandler(async (req, res) => {
   res.json({ success: true, data, days });
 });
 
+// ── GET /api/report/national-overview ────────────────────────────────────────
+// Company-wide KPI snapshot for Country Manager.
+export const getNationalOverview = asyncHandler(async (req, res) => {
+  const { company_id } = req.user;
+  const now   = new Date();
+  const month = parseInt(req.query.month) || now.getMonth() + 1;
+  const year  = parseInt(req.query.year)  || now.getFullYear();
+
+  const periodStart = new Date(Date.UTC(year, month - 1, 1));
+  const periodEnd   = new Date(Date.UTC(year, month, 1));
+
+  const reps = await prisma.user.findMany({
+    where: { company_id, role: "MedicalRep" },
+    select: { id: true },
+  });
+  const repIds = reps.map((r) => r.id);
+
+  const [doctorVisits, pharmVisits, samplesAgg, uniqueDoctors, reports] = await Promise.all([
+    prisma.doctorActivity.count({
+      where: { user_id: { in: repIds }, date: { gte: periodStart, lt: periodEnd }, nca_reason: null },
+    }),
+    prisma.pharmacyActivity.count({
+      where: { user_id: { in: repIds }, date: { gte: periodStart, lt: periodEnd } },
+    }),
+    prisma.doctorActivity.aggregate({
+      where: { user_id: { in: repIds }, date: { gte: periodStart, lt: periodEnd } },
+      _sum: { samples_given: true },
+    }),
+    prisma.doctorActivity.findMany({
+      where: { user_id: { in: repIds }, date: { gte: periodStart, lt: periodEnd }, nca_reason: null },
+      select: { doctor_id: true },
+      distinct: ["doctor_id"],
+    }),
+    prisma.dailyReport.groupBy({
+      by: ["status"],
+      where: { user_id: { in: repIds }, report_date: { gte: periodStart, lt: periodEnd } },
+      _count: { id: true },
+    }),
+  ]);
+
+  const reportMap = Object.fromEntries(reports.map((r) => [r.status, r._count.id]));
+  const submitted = (reportMap["SUBMITTED"] ?? 0) + (reportMap["APPROVED"] ?? 0);
+
+  // Working days elapsed so far in the month
+  const today = now < periodEnd ? now : new Date(periodEnd.getTime() - 1);
+  let workingDays = 0;
+  const cur = new Date(periodStart);
+  while (cur <= today) {
+    const dow = cur.getUTCDay();
+    if (dow !== 0 && dow !== 6) workingDays++;
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+
+  res.json({
+    success: true,
+    data: {
+      month, year,
+      total_reps: repIds.length,
+      doctor_visits: doctorVisits,
+      pharmacy_visits: pharmVisits,
+      total_visits: doctorVisits + pharmVisits,
+      unique_doctors_visited: uniqueDoctors.length,
+      samples_given: samplesAgg._sum.samples_given ?? 0,
+      reports_submitted: submitted,
+      working_days: workingDays,
+    },
+  });
+});
+
+// ── GET /api/report/territory-coverage?month=&year= ──────────────────────────
+// Per-territory visit counts for the current company.
+export const getTerritoryCoverage = asyncHandler(async (req, res) => {
+  const { company_id } = req.user;
+  const now   = new Date();
+  const month = parseInt(req.query.month) || now.getMonth() + 1;
+  const year  = parseInt(req.query.year)  || now.getFullYear();
+
+  const periodStart = new Date(Date.UTC(year, month - 1, 1));
+  const periodEnd   = new Date(Date.UTC(year, month, 1));
+
+  const territories = await prisma.territory.findMany({
+    where: { company_id },
+    select: {
+      id: true, name: true, territory_type: true,
+      facilities: {
+        select: {
+          facility: {
+            select: {
+              id: true,
+              working_doctors: { select: { doctor_id: true } },
+            },
+          },
+        },
+      },
+      pharmacies: { select: { pharmacy_id: true } },
+      reps:        { select: { user_id: true } },
+    },
+    orderBy: { name: "asc" },
+  });
+
+  const data = await Promise.all(territories.map(async (t) => {
+    const doctorIds  = t.facilities.flatMap((f) => f.facility.working_doctors.map((d) => d.doctor_id));
+    const pharmacyIds = t.pharmacies.map((p) => p.pharmacy_id);
+
+    const [drVisits, phVisits, uniqueDrVisited] = await Promise.all([
+      doctorIds.length > 0
+        ? prisma.doctorActivity.count({
+            where: { doctor_id: { in: doctorIds }, date: { gte: periodStart, lt: periodEnd }, nca_reason: null },
+          })
+        : 0,
+      pharmacyIds.length > 0
+        ? prisma.pharmacyActivity.count({
+            where: { pharmacy_id: { in: pharmacyIds }, date: { gte: periodStart, lt: periodEnd } },
+          })
+        : 0,
+      doctorIds.length > 0
+        ? prisma.doctorActivity.findMany({
+            where: { doctor_id: { in: doctorIds }, date: { gte: periodStart, lt: periodEnd }, nca_reason: null },
+            select: { doctor_id: true },
+            distinct: ["doctor_id"],
+          }).then((r) => r.length)
+        : 0,
+    ]);
+
+    return {
+      id: t.id, name: t.name, territory_type: t.territory_type,
+      rep_count:     t.reps.length,
+      doctor_count:  doctorIds.length,
+      pharmacy_count: pharmacyIds.length,
+      doctor_visits:  drVisits,
+      pharmacy_visits: phVisits,
+      unique_doctors_visited: uniqueDrVisited,
+      doctor_coverage_pct: doctorIds.length > 0
+        ? Math.round((uniqueDrVisited / doctorIds.length) * 100)
+        : null,
+    };
+  }));
+
+  res.json({ success: true, data });
+});
+
+// ── GET /api/report/tier-coverage?month=&year= ────────────────────────────────
+// A/B/C doctor tier visit rates for the current company.
+export const getTierCoverage = asyncHandler(async (req, res) => {
+  const { company_id } = req.user;
+  const now   = new Date();
+  const month = parseInt(req.query.month) || now.getMonth() + 1;
+  const year  = parseInt(req.query.year)  || now.getFullYear();
+
+  const periodStart = new Date(Date.UTC(year, month - 1, 1));
+  const periodEnd   = new Date(Date.UTC(year, month, 1));
+
+  const repIds = (await prisma.user.findMany({
+    where: { company_id, role: "MedicalRep" },
+    select: { id: true },
+  })).map((r) => r.id);
+
+  // Get all doctor tiers for this company
+  const tiers = await prisma.doctorCompanyTier.findMany({
+    where: { company_id },
+    select: { doctor_id: true, tier: true, visit_frequency: true },
+  });
+
+  const tierMap = Object.fromEntries(tiers.map((t) => [t.doctor_id, t]));
+
+  // Get all cycle items this month
+  const cycles = await prisma.callCycle.findMany({
+    where: { user_id: { in: repIds }, month, year },
+    select: {
+      items: { select: { doctor_id: true, target_visits: true, visits_done: true } },
+    },
+  });
+
+  const allItems = cycles.flatMap((c) => c.items);
+
+  // Aggregate by tier
+  const stats = { A: { planned: 0, done: 0 }, B: { planned: 0, done: 0 }, C: { planned: 0, done: 0 }, UNTIERED: { planned: 0, done: 0 } };
+  allItems.forEach((item) => {
+    const tier = tierMap[item.doctor_id]?.tier ?? "UNTIERED";
+    const key = tier in stats ? tier : "UNTIERED";
+    const freq = tierMap[item.doctor_id]?.visit_frequency ?? item.target_visits ?? 1;
+    stats[key].planned += freq;
+    stats[key].done    += item.visits_done;
+  });
+
+  // Also count actual visits (not just cycle-based)
+  const actsByTier = { A: 0, B: 0, C: 0, UNTIERED: 0 };
+  if (allItems.length > 0) {
+    const allDoctorIds = [...new Set(allItems.map((i) => i.doctor_id))];
+    const acts = await prisma.doctorActivity.findMany({
+      where: { user_id: { in: repIds }, doctor_id: { in: allDoctorIds }, date: { gte: periodStart, lt: periodEnd }, nca_reason: null },
+      select: { doctor_id: true },
+    });
+    acts.forEach((a) => {
+      const tier = tierMap[a.doctor_id]?.tier ?? "UNTIERED";
+      const key = tier in actsByTier ? tier : "UNTIERED";
+      actsByTier[key]++;
+    });
+  }
+
+  const data = ["A", "B", "C"].map((tier) => ({
+    tier,
+    planned:    stats[tier].planned,
+    done:       stats[tier].done,
+    actual_visits: actsByTier[tier as keyof typeof actsByTier],
+    coverage_pct: stats[tier].planned > 0
+      ? Math.round((stats[tier].done / stats[tier].planned) * 100)
+      : null,
+  }));
+
+  res.json({ success: true, data });
+});
+
+// ── GET /api/report/export ────────────────────────────────────────────────────
+// Excel export for Sales Admin. Generates one of 6 report types.
+// Query: type, start, end, rep_id (opt), team_id (opt)
+export const exportReport = asyncHandler(async (req, res) => {
+  const { company_id } = req.user;
+  const { type, start, end, rep_id, team_id } = req.query;
+
+  if (!type || !start || !end) {
+    res.status(400); throw new Error("type, start, and end are required");
+  }
+
+  const startDate = new Date(start + "T00:00:00Z");
+  const endDate   = new Date(end   + "T23:59:59Z");
+
+  // Resolve which rep IDs to include
+  let repIds;
+  if (rep_id) {
+    repIds = [rep_id];
+  } else if (team_id) {
+    const teamReps = await prisma.teamMember.findMany({
+      where: { team_id },
+      select: { user_id: true },
+    });
+    repIds = teamReps.map((r) => r.user_id);
+  } else {
+    const reps = await prisma.user.findMany({
+      where: { company_id, role: "MedicalRep" },
+      select: { id: true },
+    });
+    repIds = reps.map((r) => r.id);
+  }
+
+  const wb = new (await import("exceljs")).default.Workbook();
+  wb.creator = "KibagRep";
+  wb.created = new Date();
+
+  const hStyle = { font: { bold: true, color: { argb: "FFFFFFFF" } }, fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF16a34a" } }, alignment: { vertical: "middle" } };
+  const addSheet = (name, headers) => {
+    const ws = wb.addWorksheet(name);
+    ws.columns = headers.map((h) => ({ header: h.label, key: h.key, width: h.width ?? 20 }));
+    ws.getRow(1).eachCell((cell) => Object.assign(cell, hStyle));
+    ws.getRow(1).height = 20;
+    return ws;
+  };
+
+  if (type === "visits") {
+    const acts = await prisma.doctorActivity.findMany({
+      where: { user_id: { in: repIds }, date: { gte: startDate, lte: endDate } },
+      include: {
+        user:            { select: { firstname: true, lastname: true } },
+        doctor:          { select: { doctor_name: true, speciality: true, town: true } },
+        focused_product: { select: { product_name: true } },
+        products_detailed: { select: { product_name: true } },
+      },
+      orderBy: { date: "asc" },
+    });
+    const ws = addSheet("Visits", [
+      { key: "date", label: "Date", width: 14 },
+      { key: "rep",  label: "Rep",  width: 22 },
+      { key: "doctor", label: "Doctor", width: 28 },
+      { key: "specialty", label: "Specialty", width: 18 },
+      { key: "town",  label: "Town",  width: 16 },
+      { key: "visit_type", label: "Type", width: 12 },
+      { key: "focus_product", label: "Focus Product", width: 22 },
+      { key: "products_detailed", label: "Products Detailed", width: 30 },
+      { key: "samples", label: "Samples", width: 10 },
+      { key: "nca_reason", label: "NCA Reason", width: 28 },
+      { key: "gps_flag", label: "GPS Flag", width: 10 },
+    ]);
+    acts.forEach((a) => ws.addRow({
+      date:    a.date ? new Date(a.date).toLocaleDateString("en-GB") : "",
+      rep:     `${a.user?.firstname ?? ""} ${a.user?.lastname ?? ""}`.trim(),
+      doctor:  a.doctor?.doctor_name ?? "",
+      specialty: (a.doctor?.speciality ?? []).join(", "),
+      town:    a.doctor?.town ?? "",
+      visit_type: a.visit_type ?? "",
+      focus_product: a.focused_product?.product_name ?? "",
+      products_detailed: (a.products_detailed ?? []).map((p) => p.product_name).join(", "),
+      samples: a.samples_given ?? 0,
+      nca_reason: a.nca_reason ?? "",
+      gps_flag: a.gps_anomaly ? "YES" : "",
+    }));
+
+  } else if (type === "samples") {
+    const balances = await prisma.sampleBalance.findMany({
+      where: { user_id: { in: repIds } },
+      include: {
+        user:    { select: { firstname: true, lastname: true } },
+        product: { select: { product_name: true } },
+      },
+      orderBy: [{ user_id: "asc" }, { product_id: "asc" }],
+    });
+    const ws = addSheet("Sample Balances", [
+      { key: "rep",       label: "Rep",       width: 22 },
+      { key: "product",   label: "Product",   width: 28 },
+      { key: "issued",    label: "Issued",    width: 10 },
+      { key: "given",     label: "Given",     width: 10 },
+      { key: "remaining", label: "Remaining", width: 12 },
+    ]);
+    balances.forEach((b) => ws.addRow({
+      rep:       `${b.user?.firstname ?? ""} ${b.user?.lastname ?? ""}`.trim(),
+      product:   b.product?.product_name ?? "",
+      issued:    b.issued,
+      given:     b.given,
+      remaining: b.issued - b.given,
+    }));
+
+  } else if (type === "call_cycle") {
+    const now2 = new Date();
+    const month = now2.getMonth() + 1;
+    const year  = now2.getFullYear();
+    const cycles = await prisma.callCycle.findMany({
+      where: { user_id: { in: repIds }, month, year },
+      include: {
+        user:  { select: { firstname: true, lastname: true } },
+        items: {
+          include: { doctor: { select: { doctor_name: true, town: true } } },
+        },
+      },
+    });
+    const ws = addSheet("Call Cycle Coverage", [
+      { key: "rep",    label: "Rep",    width: 22 },
+      { key: "status", label: "Cycle Status", width: 16 },
+      { key: "doctor", label: "Doctor", width: 28 },
+      { key: "town",   label: "Town",   width: 16 },
+      { key: "target", label: "Target", width: 10 },
+      { key: "done",   label: "Done",   width: 10 },
+      { key: "pct",    label: "Coverage %", width: 12 },
+    ]);
+    cycles.forEach((c) => {
+      c.items.forEach((item) => {
+        const pct = item.target_visits > 0 ? Math.round((item.visits_done / item.target_visits) * 100) : 0;
+        ws.addRow({
+          rep:    `${c.user?.firstname ?? ""} ${c.user?.lastname ?? ""}`.trim(),
+          status: c.status,
+          doctor: item.doctor?.doctor_name ?? "",
+          town:   item.doctor?.town ?? "",
+          target: item.target_visits,
+          done:   item.visits_done,
+          pct:    `${pct}%`,
+        });
+      });
+    });
+
+  } else if (type === "nca") {
+    const ncaActs = await prisma.doctorActivity.findMany({
+      where: { user_id: { in: repIds }, date: { gte: startDate, lte: endDate }, nca_reason: { not: null } },
+      include: {
+        user:   { select: { firstname: true, lastname: true } },
+        doctor: { select: { doctor_name: true, town: true } },
+      },
+      orderBy: { date: "asc" },
+    });
+    const ws = addSheet("NCA Report", [
+      { key: "date",       label: "Date",       width: 14 },
+      { key: "rep",        label: "Rep",        width: 22 },
+      { key: "doctor",     label: "Doctor",     width: 28 },
+      { key: "town",       label: "Town",       width: 16 },
+      { key: "nca_reason", label: "NCA Reason", width: 40 },
+    ]);
+    ncaActs.forEach((a) => ws.addRow({
+      date:       a.date ? new Date(a.date).toLocaleDateString("en-GB") : "",
+      rep:        `${a.user?.firstname ?? ""} ${a.user?.lastname ?? ""}`.trim(),
+      doctor:     a.doctor?.doctor_name ?? "",
+      town:       a.doctor?.town ?? "",
+      nca_reason: a.nca_reason ?? "",
+    }));
+
+  } else if (type === "expenses") {
+    const claims = await prisma.expenseClaim.findMany({
+      where: { user_id: { in: repIds }, created_at: { gte: startDate, lte: endDate } },
+      include: {
+        user:  { select: { firstname: true, lastname: true } },
+        items: true,
+      },
+      orderBy: { created_at: "asc" },
+    });
+    const ws = addSheet("Expense Claims", [
+      { key: "rep",      label: "Rep",      width: 22 },
+      { key: "period",   label: "Period",   width: 12 },
+      { key: "category", label: "Category", width: 18 },
+      { key: "desc",     label: "Description", width: 30 },
+      { key: "amount",   label: "Amount (UGX)", width: 16 },
+      { key: "status",   label: "Status",   width: 12 },
+    ]);
+    claims.forEach((c) => {
+      (c.items ?? []).forEach((item) => {
+        ws.addRow({
+          rep:      `${c.user?.firstname ?? ""} ${c.user?.lastname ?? ""}`.trim(),
+          period:   c.period,
+          category: item.category,
+          desc:     item.description,
+          amount:   item.amount,
+          status:   c.status,
+        });
+      });
+    });
+
+  } else if (type === "compliance") {
+    const allReps = await prisma.user.findMany({
+      where: { id: { in: repIds } },
+      select: { id: true, firstname: true, lastname: true },
+    });
+    const reports2 = await prisma.dailyReport.findMany({
+      where: { user_id: { in: repIds }, report_date: { gte: startDate, lte: endDate } },
+      select: { user_id: true, status: true },
+    });
+    const repMap = {};
+    reports2.forEach((r) => {
+      if (!repMap[r.user_id]) repMap[r.user_id] = { total: 0, submitted: 0, approved: 0 };
+      repMap[r.user_id].total++;
+      if (r.status !== "DRAFT") repMap[r.user_id].submitted++;
+      if (r.status === "APPROVED") repMap[r.user_id].approved++;
+    });
+    const ws = addSheet("Compliance", [
+      { key: "rep",       label: "Rep",       width: 22 },
+      { key: "total",     label: "Reports",   width: 12 },
+      { key: "submitted", label: "Submitted", width: 12 },
+      { key: "approved",  label: "Approved",  width: 12 },
+      { key: "rate",      label: "Submit Rate %", width: 14 },
+    ]);
+    allReps.forEach((rep) => {
+      const s = repMap[rep.id] ?? { total: 0, submitted: 0, approved: 0 };
+      ws.addRow({
+        rep:       `${rep.firstname} ${rep.lastname}`.trim(),
+        total:     s.total,
+        submitted: s.submitted,
+        approved:  s.approved,
+        rate:      s.total > 0 ? `${Math.round((s.submitted / s.total) * 100)}%` : "—",
+      });
+    });
+
+  } else {
+    res.status(400); throw new Error(`Unknown report type: ${type}`);
+  }
+
+  const filename = `kibagrep_${type}_${start}_${end}.xlsx`;
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  await wb.xlsx.write(res);
+  res.end();
+});
+
 // ── GET /api/report/my-summary?month=&year= ───────────────────────────────
 // Returns monthly performance stats for the requesting rep.
 export const getMySummary = asyncHandler(async (req, res) => {
