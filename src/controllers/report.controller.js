@@ -640,7 +640,7 @@ export const getMySummary = asyncHandler(async (req, res) => {
       where: { user_id_month_year: { user_id: userId, month, year } },
       select: {
         status: true,
-        items: { select: { visits_done: true, target_visits: true, tier: true } },
+        items: { select: { visits_done: true, frequency: true, tier: true } },
       },
     }),
     prisma.sampleBalance.findMany({
