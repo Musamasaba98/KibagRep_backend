@@ -12,6 +12,42 @@ export const getMyBalance = asyncHandler(async (req, res) => {
   res.json({ success: true, data: balances });
 });
 
+// ─── GET /api/sample-balance/products-for-rep/:userId ───────────────────
+// Returns products the rep can be issued: team products if in a team, else company products.
+
+export const getProductsForRep = asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+
+  const repUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { team_id: true, company_id: true },
+  });
+
+  if (!repUser) {
+    res.status(404);
+    throw new Error("User not found");
+  }
+
+  let products = [];
+  if (repUser.team_id) {
+    const teamProducts = await prisma.teamProduct.findMany({
+      where: { team_id: repUser.team_id },
+      include: { product: { select: { id: true, product_name: true } } },
+    });
+    products = teamProducts.map((tp) => tp.product);
+  }
+
+  if (products.length === 0) {
+    products = await prisma.product.findMany({
+      where: { company_id: repUser.company_id },
+      select: { id: true, product_name: true },
+      orderBy: { product_name: "asc" },
+    });
+  }
+
+  res.json({ success: true, data: products });
+});
+
 // ─── GET /api/sample-balance/team (supervisor) ───────────────────────────
 
 export const getTeamBalances = asyncHandler(async (req, res) => {
