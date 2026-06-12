@@ -811,11 +811,13 @@ model SampleBalance {
   user_id    String
   product    Product  @relation(fields: [product_id], references: [id])
   product_id String
+  month      Int
+  year       Int
   issued     Int      @default(0)
   given      Int      @default(0)
   updated_at DateTime @updatedAt
 
-  @@unique([user_id, product_id])
+  @@unique([user_id, product_id, month, year])
 }
 
 enum ClaimStatus {
