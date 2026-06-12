@@ -610,6 +610,22 @@ export const getMySummary = asyncHandler(async (req, res) => {
   const periodStart = new Date(Date.UTC(year, month - 1, 1));
   const periodEnd   = new Date(Date.UTC(year, month, 1));
 
+  // Determine sample balance product scope: team products if rep is in a team, else all company products
+  let sampleBalanceWhere = { user_id: userId };
+  if (req.user.team_id) {
+    const teamProducts = await prisma.teamProduct.findMany({
+      where: { team_id: req.user.team_id },
+      select: { product_id: true },
+    });
+    const teamProductIds = teamProducts.map((tp) => tp.product_id);
+    sampleBalanceWhere =
+      teamProductIds.length > 0
+        ? { user_id: userId, product_id: { in: teamProductIds } }
+        : { user_id: userId, product: { company_id: req.user.company_id } };
+  } else {
+    sampleBalanceWhere = { user_id: userId, product: { company_id: req.user.company_id } };
+  }
+
   const [
     doctorVisits,
     pharmacyVisits,
@@ -644,7 +660,7 @@ export const getMySummary = asyncHandler(async (req, res) => {
       },
     }),
     prisma.sampleBalance.findMany({
-      where: { user_id: userId, product: { company_id: req.user.company_id } },
+      where: sampleBalanceWhere,
       include: { product: { select: { id: true, product_name: true } } },
     }),
   ]);
