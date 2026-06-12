@@ -113,6 +113,70 @@ export const issueSamplesBatch = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: results });
 });
 
+// ─── GET /api/sample-balance/team-summary?from_month=&from_year=&to_month=&to_year= ──
+// Aggregates all months in the period per rep. Used for productivity / resource view.
+
+export const getTeamSummary = asyncHandler(async (req, res) => {
+  const now = new Date();
+  const fromMonth = parseInt(req.query.from_month) || 1;
+  const fromYear  = parseInt(req.query.from_year)  || now.getFullYear();
+  const toMonth   = parseInt(req.query.to_month)   || nowMonth();
+  const toYear    = parseInt(req.query.to_year)    || now.getFullYear();
+
+  // Use period numbers (year * 12 + month) for simple range comparison
+  const fromPeriod = fromYear * 12 + fromMonth;
+  const toPeriod   = toYear  * 12 + toMonth;
+
+  const rows = await prisma.sampleBalance.findMany({
+    where: { user: { company_id: req.user.company_id } },
+    include: {
+      product: { select: { id: true, product_name: true } },
+      user: { select: { id: true, firstname: true, lastname: true } },
+    },
+    orderBy: [{ user_id: "asc" }],
+  });
+
+  // Filter client-side using period numbers
+  const inRange = rows.filter(r => {
+    const p = r.year * 12 + r.month;
+    return p >= fromPeriod && p <= toPeriod;
+  });
+
+  // Aggregate per rep
+  const repMap = {};
+  for (const r of inRange) {
+    const uid = r.user_id;
+    if (!repMap[uid]) {
+      repMap[uid] = {
+        user_id: uid,
+        name: `${r.user.firstname} ${r.user.lastname}`,
+        total_issued: 0,
+        total_given: 0,
+        products: {},
+      };
+    }
+    repMap[uid].total_issued += r.issued;
+    repMap[uid].total_given  += r.given;
+
+    const pid = r.product_id;
+    if (!repMap[uid].products[pid]) {
+      repMap[uid].products[pid] = { product_name: r.product.product_name, issued: 0, given: 0 };
+    }
+    repMap[uid].products[pid].issued += r.issued;
+    repMap[uid].products[pid].given  += r.given;
+  }
+
+  const data = Object.values(repMap)
+    .map((rep) => ({
+      ...rep,
+      products: Object.values(rep.products),
+      usage_pct: rep.total_issued > 0 ? Math.round((rep.total_given / rep.total_issued) * 100) : 0,
+    }))
+    .sort((a, b) => b.total_issued - a.total_issued);
+
+  res.json({ success: true, data, period: { from_month: fromMonth, from_year: fromYear, to_month: toMonth, to_year: toYear } });
+});
+
 // ─── GET /api/sample-balance/team?month=&year= ───────────────────────────
 
 export const getTeamBalances = asyncHandler(async (req, res) => {
