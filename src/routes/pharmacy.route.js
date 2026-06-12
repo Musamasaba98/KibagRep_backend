@@ -35,7 +35,7 @@ router.get("/", asyncHandler(async (req, res) => {
     // No pagination params → return all (used by dropdowns)
     const data = await prisma.pharmacy.findMany({
       where: { is_active: true },
-      select: { id: true, pharmacy_name: true, location: true, town: true, contact: true },
+      select: { id: true, pharmacy_name: true, location: true, town: true, district: true, contact: true, is_active: true, latitude: true, longitude: true, gps_source: true },
       orderBy: { pharmacy_name: "asc" },
     });
     return res.json({ status: "success", results: data.length, data });
