@@ -48,6 +48,50 @@ export const getProductsForRep = asyncHandler(async (req, res) => {
   res.json({ success: true, data: products });
 });
 
+// ─── POST /api/sample-balance/issue-batch ───────────────────────────────
+// Body: { user_id, allocations: [{ product_id, quantity }], new_month: boolean }
+// new_month=true → overwrite issued and reset given to 0 (monthly reset).
+// new_month=false → increment issued (top-up).
+
+export const issueSamplesBatch = asyncHandler(async (req, res) => {
+  const { user_id, allocations, new_month } = req.body;
+
+  if (!user_id || !Array.isArray(allocations) || allocations.length === 0) {
+    res.status(400);
+    throw new Error("user_id and at least one allocation are required");
+  }
+
+  const valid = allocations.filter(
+    (a) => a.product_id && Number.isInteger(a.quantity) && a.quantity > 0
+  );
+  if (valid.length === 0) {
+    res.status(400);
+    throw new Error("All allocations must have a valid product_id and positive integer quantity");
+  }
+
+  const results = await Promise.all(
+    valid.map(({ product_id, quantity }) =>
+      prisma.sampleBalance.upsert({
+        where: { user_id_product_id: { user_id, product_id } },
+        create: { user_id, product_id, issued: quantity, given: 0 },
+        update: new_month
+          ? { issued: quantity, given: 0 }
+          : { issued: { increment: quantity } },
+      })
+    )
+  );
+
+  await writeAudit({
+    actorId: req.user.id,
+    action: new_month ? "sample.monthly_allocation" : "sample.top_up",
+    entityType: "SampleBalance",
+    entityId: user_id,
+    metadata: { user_id, allocations: valid, new_month },
+  });
+
+  res.status(201).json({ success: true, data: results });
+});
+
 // ─── GET /api/sample-balance/team (supervisor) ───────────────────────────
 
 export const getTeamBalances = asyncHandler(async (req, res) => {
