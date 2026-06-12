@@ -644,7 +644,7 @@ export const getMySummary = asyncHandler(async (req, res) => {
       },
     }),
     prisma.sampleBalance.findMany({
-      where: { user_id: userId },
+      where: { user_id: userId, product: { company_id: req.user.company_id } },
       include: { product: { select: { id: true, product_name: true } } },
     }),
   ]);
