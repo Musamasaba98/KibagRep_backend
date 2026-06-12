@@ -610,7 +610,10 @@ export const getMySummary = asyncHandler(async (req, res) => {
   const periodStart = new Date(Date.UTC(year, month - 1, 1));
   const periodEnd   = new Date(Date.UTC(year, month, 1));
 
-  // Determine sample balance product scope: team products if rep is in a team, else all company products
+  // Determine sample balance product scope.
+  // team_id is now available on req.user (auth middleware selects it).
+  // If in a team with products → restrict to those products.
+  // Otherwise → all balances for this user (same as /sample-balance/my).
   let sampleBalanceWhere = { user_id: userId };
   if (req.user.team_id) {
     const teamProducts = await prisma.teamProduct.findMany({
@@ -618,12 +621,9 @@ export const getMySummary = asyncHandler(async (req, res) => {
       select: { product_id: true },
     });
     const teamProductIds = teamProducts.map((tp) => tp.product_id);
-    sampleBalanceWhere =
-      teamProductIds.length > 0
-        ? { user_id: userId, product_id: { in: teamProductIds } }
-        : { user_id: userId, product: { company_id: req.user.company_id } };
-  } else {
-    sampleBalanceWhere = { user_id: userId, product: { company_id: req.user.company_id } };
+    if (teamProductIds.length > 0) {
+      sampleBalanceWhere = { user_id: userId, product_id: { in: teamProductIds } };
+    }
   }
 
   const [
