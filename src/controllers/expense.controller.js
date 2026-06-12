@@ -76,7 +76,7 @@ export const addItem = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error("Claim not found");
   }
-  if (claim.status !== "DRAFT") {
+  if (claim.status !== "DRAFT" && claim.status !== "REJECTED") {
     res.status(400);
     throw new Error("Cannot modify a submitted claim");
   }
@@ -107,7 +107,7 @@ export const removeItem = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error("Claim not found");
   }
-  if (claim.status !== "DRAFT") {
+  if (claim.status !== "DRAFT" && claim.status !== "REJECTED") {
     res.status(400);
     throw new Error("Cannot modify a submitted claim");
   }
@@ -131,7 +131,7 @@ export const submitClaim = asyncHandler(async (req, res) => {
     res.status(404);
     throw new Error("Claim not found");
   }
-  if (claim.status !== "DRAFT") {
+  if (claim.status !== "DRAFT" && claim.status !== "REJECTED") {
     res.status(400);
     throw new Error(`Claim is already ${claim.status}`);
   }
