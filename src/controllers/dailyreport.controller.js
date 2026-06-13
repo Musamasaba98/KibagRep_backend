@@ -55,19 +55,33 @@ export const getTodayReport = asyncHandler(async (req, res) => {
 // POST /api/daily-report/submit
 export const submitReport = asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { summary, jfw_observer_id, report_date: reportDateStr } = req.body;
+  const { summary, jfw_observer_id, report_date: reportDateStr, report_id } = req.body;
 
-  // Use the provided date or default to today (UTC midnight)
-  const reportDate = reportDateStr ? dayStart(new Date(reportDateStr)) : dayStart();
+  let reportDate;
+  let existingReport = null;
+
+  if (report_id) {
+    // ── History submission: look up the exact record by ID ──────────────────
+    existingReport = await prisma.dailyReport.findUnique({ where: { id: report_id } });
+    if (!existingReport || existingReport.user_id !== userId) {
+      return res.status(404).json({ success: false, message: "Report not found." });
+    }
+    if (existingReport.status !== "DRAFT" && existingReport.status !== "REJECTED") {
+      return res.status(400).json({ success: false, message: "Report is not in a submittable state." });
+    }
+    reportDate = new Date(existingReport.report_date);
+  } else {
+    // ── Today's submission: use provided date or default to today ───────────
+    reportDate = reportDateStr ? dayStart(new Date(reportDateStr)) : dayStart();
+  }
+
   const nextDay = new Date(reportDate);
   nextDay.setUTCDate(nextDay.getUTCDate() + 1);
 
   // ── Midnight gate (EAT) ───────────────────────────────────────────────────
-  // Report window: 00:00–23:59 EAT on the report's date. Any submission after
-  // that window requires an approved late-submission request for that month.
-  const nowUTC    = new Date();
-  const eatHour   = (nowUTC.getUTCHours() + 3) % 24;
-  const todayEAT  = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const nowUTC     = new Date();
+  const eatHour    = (nowUTC.getUTCHours() + 3) % 24;
+  const todayEAT   = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const rptDateStr = reportDate.toISOString().slice(0, 10);
   const isPastWindow = todayEAT > rptDateStr || (todayEAT === rptDateStr && eatHour === 0);
 
@@ -100,25 +114,41 @@ export const submitReport = asyncHandler(async (req, res) => {
     prisma.user.findUnique({ where: { id: userId }, select: { email: true, firstname: true, lastname: true, company_id: true } }),
   ]);
 
-  const report = await prisma.dailyReport.upsert({
-    where: { user_id_report_date: { user_id: userId, report_date: reportDate } },
-    create: {
-      user: { connect: { id: userId } },
-      report_date: reportDate,
-      summary: summary ?? null,
-      visits_count: visitsCount + pharmCount,
-      samples_count: samplesAgg._sum.samples_given ?? 0,
-      status: "SUBMITTED",
-      jfw_observer_id: jfw_observer_id ?? null,
-    },
-    update: {
-      summary: summary ?? undefined,
-      visits_count: visitsCount + pharmCount,
-      samples_count: samplesAgg._sum.samples_given ?? 0,
-      status: "SUBMITTED",
-      jfw_observer_id: jfw_observer_id ?? null,
-    },
-  });
+  // For history submissions: update the exact record by ID.
+  // For today: upsert (creates if the daily auto-create hasn't fired yet).
+  let report;
+  if (existingReport) {
+    report = await prisma.dailyReport.update({
+      where: { id: existingReport.id },
+      data: {
+        summary: summary ?? existingReport.summary,
+        visits_count: visitsCount + pharmCount,
+        samples_count: samplesAgg._sum.samples_given ?? 0,
+        status: "SUBMITTED",
+        jfw_observer_id: jfw_observer_id ?? existingReport.jfw_observer_id,
+      },
+    });
+  } else {
+    report = await prisma.dailyReport.upsert({
+      where: { user_id_report_date: { user_id: userId, report_date: reportDate } },
+      create: {
+        user: { connect: { id: userId } },
+        report_date: reportDate,
+        summary: summary ?? null,
+        visits_count: visitsCount + pharmCount,
+        samples_count: samplesAgg._sum.samples_given ?? 0,
+        status: "SUBMITTED",
+        jfw_observer_id: jfw_observer_id ?? null,
+      },
+      update: {
+        summary: summary ?? undefined,
+        visits_count: visitsCount + pharmCount,
+        samples_count: samplesAgg._sum.samples_given ?? 0,
+        status: "SUBMITTED",
+        jfw_observer_id: jfw_observer_id ?? null,
+      },
+    });
+  }
 
   // Notify supervisors in the same company
   if (user?.company_id) {
