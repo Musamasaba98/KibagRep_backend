@@ -55,29 +55,29 @@ export const getTodayReport = asyncHandler(async (req, res) => {
 // POST /api/daily-report/submit
 export const submitReport = asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { summary, jfw_observer_id } = req.body;
-  const today = dayStart();
-  const tomorrow = new Date(today);
-  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  const { summary, jfw_observer_id, report_date: reportDateStr } = req.body;
+
+  // Use the provided date or default to today (UTC midnight)
+  const reportDate = reportDateStr ? dayStart(new Date(reportDateStr)) : dayStart();
+  const nextDay = new Date(reportDate);
+  nextDay.setUTCDate(nextDay.getUTCDate() + 1);
 
   // ── Midnight gate (EAT) ───────────────────────────────────────────────────
-  // Report window: 00:00–23:59 EAT. After midnight EAT (21:00 UTC), a late
-  // submission request approved by the supervisor is required.
-  const nowUTC = new Date();
-  const eatHour = (nowUTC.getUTCHours() + 3) % 24;
-  const eatDay  = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000);
-  const reportDateEAT = today.toISOString().slice(0, 10);
-  const todayEAT      = eatDay.toISOString().slice(0, 10);
-  // Past midnight means today (EAT) is AFTER the report date
-  const isPastMidnight = todayEAT > reportDateEAT || (todayEAT === reportDateEAT && eatHour === 0);
+  // Report window: 00:00–23:59 EAT on the report's date. Any submission after
+  // that window requires an approved late-submission request for that month.
+  const nowUTC    = new Date();
+  const eatHour   = (nowUTC.getUTCHours() + 3) % 24;
+  const todayEAT  = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const rptDateStr = reportDate.toISOString().slice(0, 10);
+  const isPastWindow = todayEAT > rptDateStr || (todayEAT === rptDateStr && eatHour === 0);
 
-  if (isPastMidnight) {
+  if (isPastWindow) {
     const lateReq = await prisma.lateSubmissionRequest.findFirst({
       where: {
         user_id: userId,
         type: "DAILY_REPORT",
-        month: today.getUTCMonth() + 1,
-        year: today.getUTCFullYear(),
+        month: reportDate.getUTCMonth() + 1,
+        year: reportDate.getUTCFullYear(),
         status: "APPROVED",
       },
     });
@@ -85,26 +85,26 @@ export const submitReport = asyncHandler(async (req, res) => {
       return res.status(403).json({
         success: false,
         error: "LATE_SUBMISSION_REQUIRED",
-        message: "The report window closed at midnight. Please request late-submission approval from your supervisor.",
+        message: "The report window is closed. Request late-submission approval from your supervisor.",
       });
     }
   }
 
   const [visitsCount, pharmCount, samplesAgg, user] = await Promise.all([
-    prisma.doctorActivity.count({ where: { user_id: userId, date: { gte: today, lt: tomorrow } } }),
-    prisma.pharmacyActivity.count({ where: { user_id: userId, date: { gte: today, lt: tomorrow } } }),
+    prisma.doctorActivity.count({ where: { user_id: userId, date: { gte: reportDate, lt: nextDay } } }),
+    prisma.pharmacyActivity.count({ where: { user_id: userId, date: { gte: reportDate, lt: nextDay } } }),
     prisma.doctorActivity.aggregate({
-      where: { user_id: userId, date: { gte: today, lt: tomorrow } },
+      where: { user_id: userId, date: { gte: reportDate, lt: nextDay } },
       _sum: { samples_given: true },
     }),
     prisma.user.findUnique({ where: { id: userId }, select: { email: true, firstname: true, lastname: true, company_id: true } }),
   ]);
 
   const report = await prisma.dailyReport.upsert({
-    where: { user_id_report_date: { user_id: userId, report_date: today } },
+    where: { user_id_report_date: { user_id: userId, report_date: reportDate } },
     create: {
       user: { connect: { id: userId } },
-      report_date: today,
+      report_date: reportDate,
       summary: summary ?? null,
       visits_count: visitsCount + pharmCount,
       samples_count: samplesAgg._sum.samples_given ?? 0,
@@ -127,7 +127,7 @@ export const submitReport = asyncHandler(async (req, res) => {
       select: { email: true },
     });
     const repName = `${user.firstname} ${user.lastname}`;
-    const dateStr = today.toDateString();
+    const dateStr = reportDate.toDateString();
     await Promise.all(supervisors.map((s) =>
       sendMail({
         to: s.email,
