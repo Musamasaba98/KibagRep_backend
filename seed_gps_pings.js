@@ -15,22 +15,30 @@ const { Client } = pg;
 
 // ── Kampala anchor points (lat, lng) ──────────────────────────────────────────
 // These are real Kampala landmarks reps would pass through
+// Routes are built around each rep's actual seeded visit GPS coordinates
+// so the route line passes through (or very near) the facility pin markers.
 const KAMPALA_ROUTES = {
   sarah: {
-    // Sarah: Nakasero / City Centre / Kololo corridor
+    // Sarah visits: Kato [0.3376,32.5772], Namukasa [0.3042,32.5838],
+    //               Ssemwogerere [0.3120,32.6021], Namutebi [0.3049,32.5614]
+    // Route: home base → Mulago (Kato) → east to Case area (Ssemwogerere)
+    //        → south to Nakasero (Namukasa) → west to Old Kampala (Namutebi) → home
     waypoints: [
-      [0.3163, 32.5882],  // Nakasero Hospital area — start
-      [0.3185, 32.5854],  // Towards Nakasero hill
-      [0.3210, 32.5822],  // Nakasero Market
-      [0.3178, 32.5795],  // Kampala Road
-      [0.3153, 32.5930],  // Case Hospital (Muyenga)
-      [0.3130, 32.5960],  // Luthuli Ave
-      [0.3095, 32.5928],  // Buganda Road
-      [0.3063, 32.5892],  // Makerere Hill Rd area
-      [0.3078, 32.5847],  // Wandegeya junction
-      [0.3217, 32.5794],  // Kampala Hospital (Mulago branch clinic)
-      [0.3280, 32.5810],  // Upper Mulago road
-      [0.3163, 32.5882],  // back to Nakasero — end of day
+      [0.3200, 32.5820],  // Home base — Nakasero/city centre
+      [0.3280, 32.5790],  // Heading north towards Mulago
+      [0.3376, 32.5772],  // ★ Dr. James Kato (Mulago area)
+      [0.3310, 32.5800],  // Descending from Mulago
+      [0.3240, 32.5870],  // Wandegeya junction
+      [0.3180, 32.5960],  // Heading east
+      [0.3120, 32.6021],  // ★ Dr. Robert Ssemwogerere (eastern Kampala)
+      [0.3100, 32.5940],  // Heading back west
+      [0.3070, 32.5880],  // Kampala Road
+      [0.3042, 32.5838],  // ★ Dr. Grace Namukasa (south central)
+      [0.3045, 32.5740],  // Heading west
+      [0.3049, 32.5614],  // ★ Dr. Prossy Namutebi (Old Kampala area)
+      [0.3100, 32.5680],  // Heading back east
+      [0.3160, 32.5770],  // Back towards city centre
+      [0.3200, 32.5820],  // Home base — end of day
     ],
   },
   ronald: {
@@ -75,8 +83,8 @@ const SEED_DATES = ["2026-06-23", "2026-06-24", "2026-06-25", "2026-06-26", "202
 
 // Ping interval: 5 minutes (real app is 45s, but for demo data 5min is plenty)
 const PING_INTERVAL_MIN = 5;
-const WORK_START_H = 8;   // 8:00 AM
-const WORK_END_H   = 17;  // 5:30 PM (105 pings per day per rep)
+const WORK_START_H = 5;   // 08:00 EAT = 05:00 UTC
+const WORK_END_H   = 14;  // 17:30 EAT = 14:30 UTC
 const WORK_END_MIN = 30;
 
 // ── Interpolate a smooth path between waypoints ───────────────────────────────
