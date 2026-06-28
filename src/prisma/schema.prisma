@@ -64,6 +64,7 @@ model User {
   suggested_facility_staff           FacilityStaff[]  @relation("FacilityStaffSuggestedBy")
   supervisor_approved_facility_staff FacilityStaff[]  @relation("FacilityStaffSupervisorApproved")
   admin_approved_facility_staff      FacilityStaff[]  @relation("FacilityStaffAdminApproved")
+  created_campaigns  Campaign[]   @relation("CampaignCreator")
 }
 
 model SupervisorProfile {
@@ -148,6 +149,7 @@ model Company {
   field_events           FieldEvent[]
   stock_placement_targets StockPlacementTarget[]
   teams                  Team[]
+  campaigns              Campaign[]
   is_active            Boolean                @default(true)
   date_of_joining      DateTime               @default(now())
   updatedAt            DateTime?              @updatedAt
@@ -179,6 +181,7 @@ model Product {
   sample_balances          SampleBalance[]
   pharmacy_activities      PharmacyActivity[]
   procurement_items        ProcurementItem[]
+  campaigns                Campaign[]       @relation("CampaignProduct")
   generic_name             String?
   drug_catalog_maps        DrugCatalogProductMap[]
   product_targets          ProductTarget[]
@@ -1552,4 +1555,24 @@ model HcpRecord {
   @@index([registration_no])
   @@index([council])
   @@index([licence_status])
+}
+
+// ─── Campaign ─────────────────────────────────────────────────────────────────
+model Campaign {
+  id          String    @id @default(uuid())
+  company_id  String
+  company     Company   @relation(fields: [company_id], references: [id])
+  name        String
+  brief       String
+  product_id  String?
+  product     Product?  @relation("CampaignProduct", fields: [product_id], references: [id])
+  start_date  DateTime
+  end_date    DateTime
+  status      String    @default("ACTIVE")
+  target_all  Boolean   @default(true)
+  team_ids    String[]
+  created_by  String
+  creator     User      @relation("CampaignCreator", fields: [created_by], references: [id])
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
 }

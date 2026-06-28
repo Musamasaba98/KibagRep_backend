@@ -30,6 +30,7 @@ import competitorRouter from "./src/routes/competitor.route.js";
 import libraryRouter from "./src/routes/library.route.js";
 import fieldEventRouter from "./src/routes/fieldevent.route.js";
 import placementRouter from "./src/routes/placement.route.js";
+import campaignRouter from "./src/routes/campaign.route.js";
 import lateRequestRouter from "./src/routes/laterequest.route.js";
 import pushRouter from "./src/routes/push.route.js";
 import locationRouter from "./src/routes/location.route.js";
@@ -138,6 +139,9 @@ app.use("/api/field-events", fieldEventRouter);
 
 // Stock placement targets (monthly units per SKU per outlet)
 app.use("/api/placement", placementRouter);
+
+// Marketing campaigns
+app.use("/api/campaign", campaignRouter);
 app.use("/api/location", locationRouter);
 app.use("/api/pharmacy-staff",   pharmacyStaffRouter);
 app.use("/api/facility-staff",   facilityStaffRouter);
