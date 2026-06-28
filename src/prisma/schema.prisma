@@ -257,6 +257,7 @@ model Team {
   supervisor       User?           @relation("TeamSupervisor", fields: [supervisor_id], references: [id])
   supervisor_id    String?
   territories      TerritoryTeam[]
+  literature       ProductLiterature[]
   date_of_creation DateTime        @default(now())
   updatedAt        DateTime?       @updatedAt
 
@@ -1193,6 +1194,9 @@ model ProductLiterature {
   company_id   String
   product      Product? @relation(fields: [product_id], references: [id])
   product_id   String?
+  // null = company-wide; set = visible only to that team + Manager and above
+  team         Team?    @relation(fields: [team_id], references: [id])
+  team_id      String?
   title        String
   description  String?
   file_url     String   // S3/CDN URL
@@ -1207,6 +1211,7 @@ model ProductLiterature {
 
   @@index([company_id, is_active])
   @@index([product_id])
+  @@index([team_id])
 }
 
 // Monthly per-product targets set per rep by supervisor/manager
