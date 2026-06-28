@@ -2,6 +2,7 @@ import prisma from "../config/prisma.config.js";
 import asyncHandler from "express-async-handler";
 import { sendMail } from "../utils/mailer.js";
 import { writeAudit } from "../utils/audit.js";
+import { sendPushToUsers } from "./push.controller.js";
 
 function dayStart(date = new Date()) {
   const d = new Date(date);
@@ -237,6 +238,12 @@ export const approveReport = asyncHandler(async (req, res) => {
       html: `<p>Hi ${report.user.firstname},</p>
              <p>Your daily report for <strong>${report.report_date.toDateString()}</strong> has been <strong style="color:green">approved</strong>.</p>`,
     }),
+    sendPushToUsers([report.user_id], {
+      title: "Report Approved ✓",
+      body: `Your daily report for ${report.report_date.toDateString()} has been approved.`,
+      url: "/rep-page/reports",
+      tag: "report-approved",
+    }),
     writeAudit({ actorId: reviewerId, action: "report.approved", entityType: "DailyReport", entityId: id }),
   ]);
 
@@ -270,6 +277,12 @@ export const rejectReport = asyncHandler(async (req, res) => {
              <p>Your daily report for <strong>${report.report_date.toDateString()}</strong> was <strong style="color:red">rejected</strong>.</p>
              ${note ? `<p><strong>Reason:</strong> ${note}</p>` : ""}
              <p>Please revise and resubmit.</p>`,
+    }),
+    sendPushToUsers([report.user_id], {
+      title: "Report Needs Revision",
+      body: note ? `Reason: ${note}` : `Your report for ${report.report_date.toDateString()} was rejected. Please revise and resubmit.`,
+      url: "/rep-page/reports",
+      tag: "report-rejected",
     }),
     writeAudit({ actorId: reviewerId, action: "report.rejected", entityType: "DailyReport", entityId: id, metadata: { note } }),
   ]);
