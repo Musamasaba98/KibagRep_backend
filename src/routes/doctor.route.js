@@ -26,9 +26,10 @@ router.get("/search",                   searchDoctors);
 router.get("/recommendations",          getRecommendations);
 router.post("/recommend",               recommendDoctor);
 router.post("/report-clinician",        reportNewClinician);
-router.put("/recommendations/:id/approve", approveRecommendation);
-router.put("/recommendations/:id/reject",  rejectRecommendation);
-router.put("/recommendations/:id/forward", forwardToKibag);
+const REC_APPROVERS = ["Supervisor", "Manager", "COUNTRY_MGR", "SALES_ADMIN", "SUPER_ADMIN"];
+router.put("/recommendations/:id/approve", requireRole(REC_APPROVERS), approveRecommendation);
+router.put("/recommendations/:id/reject",  requireRole(REC_APPROVERS), rejectRecommendation);
+router.put("/recommendations/:id/forward", requireRole(REC_APPROVERS), forwardToKibag);
 router.post("/recommendations/:id/visit",  incrementUnplannedVisit);
 
 // ── Bulk operations (SUPER_ADMIN only) ────────────────────────────────────────
@@ -55,6 +56,6 @@ router.post(  "/:id/company-list", requireRole(LIST_MANAGERS), addToCompanyList)
 router.delete("/:id/company-list", requireRole(LIST_MANAGERS), removeFromCompanyList);
 
 // ── Company tier (Supervisor / Manager / SALES_ADMIN) ─────────────────────────
-router.put("/:id/tier", validate(SetDoctorTierSchema), setDoctorTier);
+router.put("/:id/tier", requireRole("Supervisor", "Manager", "COUNTRY_MGR", "SALES_ADMIN", "SUPER_ADMIN"), validate(SetDoctorTierSchema), setDoctorTier);
 
 export default router;
