@@ -16,7 +16,8 @@ export const signup = asyncHandler(async (req, res, next) => {
   const {
     username, firstname, lastname, password, email,
     role, contact, gender,
-    company_id,        // optional — set when admin creates user for a company
+    company_id,          // optional — set when admin creates user for a company
+    manager_type,        // optional — "Field", "Sales", or "Marketing" for Manager role
     must_reset_password, // true when admin generates a temp password for a new employee
   } = req.body;
   try {
@@ -30,6 +31,7 @@ export const signup = asyncHandler(async (req, res, next) => {
     const newUser = await prisma.user.create({
       data: {
         username, firstname, lastname, email, role, contact, gender,
+        ...(manager_type ? { manager_type } : {}),
         password: hashedPassword,
         must_reset_password: must_reset_password === true,
         ...(company_id ? { company: { connect: { id: company_id } } } : {}),
@@ -80,6 +82,7 @@ export const getCompanyUsers = asyncHandler(async (req, res) => {
       id: true, username: true, firstname: true, lastname: true,
       role: true, email: true, contact: true,
       team: { select: { id: true, team_name: true } },
+      manager_type: true,
       territories: {
         include: {
           territory: { select: { id: true, name: true, territory_type: true, region: true } },
@@ -94,7 +97,7 @@ export const getCompanyUsers = asyncHandler(async (req, res) => {
 
 // POST /api/user/company/add — add an existing user to the current company by userId
 export const addUserToCompany = asyncHandler(async (req, res) => {
-  const { userId, role, team_id, company_id: targetCompanyId } = req.body;
+  const { userId, role, team_id, manager_type, company_id: targetCompanyId } = req.body;
   const actor = req.user;
   const allowed = ROLE_CAN_ASSIGN[actor.role] ?? [];
   if (!allowed.includes(role)) {
@@ -134,7 +137,12 @@ export const addUserToCompany = asyncHandler(async (req, res) => {
 
   const updated = await prisma.user.update({
     where: { id: userId },
-    data: { company_id: companyId, role, ...(team_id ? { team_id } : {}) },
+    data: {
+      company_id: companyId,
+      role,
+      ...(team_id ? { team_id } : {}),
+      ...(manager_type !== undefined ? { manager_type: manager_type || null } : {}),
+    },
     select: { id: true, username: true, firstname: true, lastname: true, role: true, company_id: true },
   });
 
@@ -154,7 +162,7 @@ export const addUserToCompany = asyncHandler(async (req, res) => {
 // PUT /api/user/company/:userId — update role or team for a company member
 export const updateCompanyUser = asyncHandler(async (req, res) => {
   const { userId } = req.params;
-  const { role, team_id } = req.body;
+  const { role, team_id, manager_type } = req.body;
   const actor = req.user;
   const target = await prisma.user.findUnique({ where: { id: userId } });
   if (!target || (target.company_id !== actor.company_id && actor.role !== "SUPER_ADMIN")) {
@@ -163,8 +171,9 @@ export const updateCompanyUser = asyncHandler(async (req, res) => {
   const updated = await prisma.user.update({
     where: { id: userId },
     data: {
-      ...(role    !== undefined && { role }),
-      ...(team_id !== undefined && { team_id: team_id || null }),
+      ...(role         !== undefined && { role }),
+      ...(team_id      !== undefined && { team_id: team_id || null }),
+      ...(manager_type !== undefined && { manager_type: manager_type || null }),
     },
     select: {
       id: true, username: true, firstname: true, lastname: true, role: true,

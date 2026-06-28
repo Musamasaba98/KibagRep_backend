@@ -27,6 +27,8 @@ model User {
   team                   Team?               @relation(fields: [team_id], references: [id])
   team_id              String?
   supervised_teams       Team[]              @relation("TeamSupervisor")
+  // Manager function: "Field", "Marketing", "Sales" — a company can have all, some, or none
+  manager_type         String?
   sample_distributions SampleDistribution[]
   pharmacy_activity    PharmacyActivity[]
   doctor_activity      DoctorActivity[]
