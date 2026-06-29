@@ -194,18 +194,39 @@ export const getMyReports = asyncHandler(async (req, res) => {
 
 // GET /api/daily-report/pending  — supervisor
 export const getPendingReports = asyncHandler(async (req, res) => {
+  const { role, id: callerId } = req.user;
   const currentUser = await prisma.user.findUnique({
-    where: { id: req.user.id },
+    where: { id: callerId },
     select: { company_id: true },
   });
   if (!currentUser?.company_id) return res.status(200).json({ success: true, data: [] });
 
-  const companyUserIds = (
-    await prisma.user.findMany({ where: { company_id: currentUser.company_id }, select: { id: true } })
-  ).map((u) => u.id);
+  const { company_id } = currentUser;
+  let scopedUserIds;
+
+  if (role === 'Supervisor') {
+    const myTeams = await prisma.team.findMany({
+      where: { supervisor_id: callerId, company_id },
+      select: { id: true },
+    });
+    if (myTeams.length === 0) return res.status(200).json({ success: true, data: [] });
+
+    scopedUserIds = (
+      await prisma.user.findMany({
+        where: { team_id: { in: myTeams.map(t => t.id) }, company_id, role: 'MedicalRep' },
+        select: { id: true },
+      })
+    ).map(u => u.id);
+  } else {
+    scopedUserIds = (
+      await prisma.user.findMany({ where: { company_id }, select: { id: true } })
+    ).map(u => u.id);
+  }
+
+  if (scopedUserIds.length === 0) return res.status(200).json({ success: true, data: [] });
 
   const reports = await prisma.dailyReport.findMany({
-    where: { user_id: { in: companyUserIds }, status: "SUBMITTED" },
+    where: { user_id: { in: scopedUserIds }, status: "SUBMITTED" },
     include: { user: { select: { id: true, firstname: true, lastname: true, role: true } } },
     orderBy: { report_date: "desc" },
   });
@@ -361,7 +382,7 @@ export const getReportActivities = asyncHandler(async (req, res) => {
 
 // GET /api/daily-report/company?days=30&status=SUBMITTED,APPROVED
 export const getCompanyReports = asyncHandler(async (req, res) => {
-  const { company_id } = req.user;
+  const { company_id, role, id: callerId } = req.user;
   if (!company_id) return res.status(200).json({ success: true, data: [] });
 
   const days = Math.min(parseInt(req.query.days) || 30, 90);
@@ -374,12 +395,33 @@ export const getCompanyReports = asyncHandler(async (req, res) => {
     ? req.query.status.split(',').filter(s => allowed.includes(s))
     : allowed;
 
-  const companyUserIds = (
-    await prisma.user.findMany({ where: { company_id }, select: { id: true } })
-  ).map(u => u.id);
+  let scopedUserIds;
+
+  if (role === 'Supervisor') {
+    // Supervisors see only reps in their own team(s)
+    const myTeams = await prisma.team.findMany({
+      where: { supervisor_id: callerId, company_id },
+      select: { id: true },
+    });
+    if (myTeams.length === 0) return res.status(200).json({ success: true, data: [] });
+
+    scopedUserIds = (
+      await prisma.user.findMany({
+        where: { team_id: { in: myTeams.map(t => t.id) }, company_id, role: 'MedicalRep' },
+        select: { id: true },
+      })
+    ).map(u => u.id);
+  } else {
+    // Managers and above see all company reps
+    scopedUserIds = (
+      await prisma.user.findMany({ where: { company_id }, select: { id: true } })
+    ).map(u => u.id);
+  }
+
+  if (scopedUserIds.length === 0) return res.status(200).json({ success: true, data: [] });
 
   const reports = await prisma.dailyReport.findMany({
-    where: { user_id: { in: companyUserIds }, report_date: { gte: since }, status: { in: statusFilter } },
+    where: { user_id: { in: scopedUserIds }, report_date: { gte: since }, status: { in: statusFilter } },
     include: { user: { select: { id: true, firstname: true, lastname: true, role: true } } },
     orderBy: { report_date: 'desc' },
     take: 200,
