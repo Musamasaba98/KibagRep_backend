@@ -1,7 +1,5 @@
-import { PrismaClient } from "@prisma/client";
+import prisma from "../config/prisma.config.js";
 import asyncHandler from "express-async-handler";
-
-const prisma = new PrismaClient();
 
 const CAMPAIGN_INCLUDE = {
   product: { select: { id: true, product_name: true } },
