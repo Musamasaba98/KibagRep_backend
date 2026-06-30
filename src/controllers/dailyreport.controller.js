@@ -83,7 +83,9 @@ export const submitReport = asyncHandler(async (req, res) => {
   const nowUTC     = new Date();
   const eatHour    = (nowUTC.getUTCHours() + 3) % 24;
   const todayEAT   = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const rptDateStr = reportDate.toISOString().slice(0, 10);
+  // Convert report date to EAT before comparing — reports stored at EAT midnight (21:00 UTC)
+  // and those stored at UTC midnight (00:00 UTC) must both resolve to the correct EAT date.
+  const rptDateStr = new Date(reportDate.getTime() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const isPastWindow = todayEAT > rptDateStr || (todayEAT === rptDateStr && eatHour === 0);
 
   if (isPastWindow) {
