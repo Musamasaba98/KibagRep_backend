@@ -13,7 +13,7 @@ function gpsDistanceMetres(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-const GPS_ANOMALY_THRESHOLD_M = 500;
+const GPS_ANOMALY_THRESHOLD_M = 100;
 
 // Flag visits queued after 21:00 — reps legitimately see clinicians up to ~9pm
 function isTimingAnomaly(queuedAt) {
