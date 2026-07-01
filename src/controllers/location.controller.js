@@ -1,6 +1,8 @@
 import prisma from "../config/prisma.config.js";
 import asyncHandler from "express-async-handler";
 
+const ONLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
 // Haversine distance in metres
 function distanceMetres(lat1, lng1, lat2, lng2) {
   const R = 6371000;
@@ -107,4 +109,72 @@ export const getMyTrail = asyncHandler(async (req, res) => {
   });
 
   res.status(200).json({ success: true, data: pings });
+});
+
+// GET /api/location/team-last-seen
+// Supervisor/Manager: latest ping per rep in their team, with online status.
+export const getTeamLastSeen = asyncHandler(async (req, res) => {
+  const { role, id: callerId } = req.user;
+  const currentUser = await prisma.user.findUnique({
+    where: { id: callerId },
+    select: { company_id: true },
+  });
+  if (!currentUser?.company_id) return res.status(200).json({ success: true, data: [] });
+
+  const { company_id } = currentUser;
+  let repIds;
+
+  if (role === 'Supervisor') {
+    const myTeams = await prisma.team.findMany({
+      where: { supervisor_id: callerId, company_id },
+      select: { id: true },
+    });
+    if (myTeams.length === 0) return res.status(200).json({ success: true, data: [] });
+    const reps = await prisma.user.findMany({
+      where: { team_id: { in: myTeams.map(t => t.id) }, company_id, role: 'MedicalRep' },
+      select: { id: true, firstname: true, lastname: true },
+    });
+    repIds = reps.map(r => r.id);
+    // Attach name info for response
+    var repMap = Object.fromEntries(reps.map(r => [r.id, r]));
+  } else {
+    const reps = await prisma.user.findMany({
+      where: { company_id, role: 'MedicalRep' },
+      select: { id: true, firstname: true, lastname: true },
+    });
+    repIds = reps.map(r => r.id);
+    var repMap = Object.fromEntries(reps.map(r => [r.id, r]));
+  }
+
+  if (repIds.length === 0) return res.status(200).json({ success: true, data: [] });
+
+  // Get the latest ping for each rep in one query using DISTINCT ON
+  const latestPings = await prisma.$queryRaw`
+    SELECT DISTINCT ON (user_id)
+      user_id, lat, lng, accuracy, recorded_at
+    FROM "LocationPing"
+    WHERE user_id = ANY(${repIds})
+    ORDER BY user_id, recorded_at DESC
+  `;
+
+  const now = Date.now();
+  const result = repIds.map(id => {
+    const rep = repMap[id];
+    const ping = latestPings.find(p => p.user_id === id);
+    const lastSeenMs = ping ? new Date(ping.recorded_at).getTime() : null;
+    return {
+      user_id:    id,
+      firstname:  rep.firstname,
+      lastname:   rep.lastname,
+      last_ping:  ping ? {
+        lat:         parseFloat(ping.lat),
+        lng:         parseFloat(ping.lng),
+        recorded_at: ping.recorded_at,
+      } : null,
+      is_online:  lastSeenMs != null && (now - lastSeenMs) < ONLINE_THRESHOLD_MS,
+      last_seen_ms: lastSeenMs,
+    };
+  });
+
+  res.status(200).json({ success: true, data: result });
 });
