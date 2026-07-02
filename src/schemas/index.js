@@ -73,8 +73,24 @@ export const AddTourPlanEntrySchema = z.object({
 });
 
 export const UpdateTourPlanDaySchema = z.object({
-  plan_date: z.string().optional(),
-  notes:     z.string().max(500).optional(),
+  day_number:      z.number().int().min(1).max(31),
+  morning_area:    z.string().max(200).nullable().optional(),
+  evening_area:    z.string().max(200).nullable().optional(),
+  notes:           z.string().max(500).nullable().optional(),
+  day_type:        z.enum([
+    "FIELD","SUNDAY","PUBLIC_HOLIDAY","SATURDAY_HALF","SATURDAY_OFF",
+    "SATURDAY_MEETING","LEAVE_FULL","LEAVE_HALF_AM","LEAVE_HALF_PM",
+    "OFFICE_DAY","FIELD_CANCELLED"
+  ]).optional(),
+  daily_allowance: z.number().min(0).optional(),
+  transport:       z.number().min(0).optional(),
+  airtime:         z.number().min(0).optional(),
+  accommodation:   z.number().min(0).optional(),
+  other_costs:     z.number().min(0).optional(),
+});
+
+export const CompanySettingsSchema = z.object({
+  saturday_default: z.enum(["OFF","HALF_DAY","FULL_DAY","MEETING"]),
 });
 
 // ─── Pharmacy Activity ────────────────────────────────────────────────────────

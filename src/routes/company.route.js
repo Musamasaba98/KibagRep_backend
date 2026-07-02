@@ -1,7 +1,7 @@
 import express from "express";
 import { protect, requireRole } from "../middleware/auth.middleware.js";
 import { validate } from "../middleware/validate.middleware.js";
-import { CreateCompanySchema } from "../schemas/index.js";
+import { CreateCompanySchema, CompanySettingsSchema } from "../schemas/index.js";
 import {
   createCompany,
   deleteCompany,
@@ -12,12 +12,14 @@ import {
   getCompanyUsersById,
   getPlatformStats,
   toggleCompanyActive,
+  updateCompanySettings,
 } from "../controllers/company.controller.js";
 
 const router = express.Router();
 
 // Static paths before /:id
 router.get("/mine", protect, getMyCompany);
+router.put("/settings", protect, requireRole("SALES_ADMIN","Manager","COUNTRY_MGR","SUPER_ADMIN"), validate(CompanySettingsSchema), updateCompanySettings);
 router.get("/stats", protect, requireRole("SUPER_ADMIN"), getPlatformStats);
 
 router.get("/", protect, requireRole("SUPER_ADMIN"), getAllCompany);

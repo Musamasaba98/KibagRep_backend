@@ -161,6 +161,9 @@ model Company {
   plan_expires_at      DateTime?
   is_locked            Boolean                @default(false)
   lock_reason          String?
+
+  // Saturday policy — configurable by Sales Admin
+  saturday_default     SaturdayPolicy         @default(OFF)
 }
 
 model Product {
@@ -662,7 +665,8 @@ model TourPlanDay {
   morning_area    String?  // morning territory/cluster
   evening_area    String?  // evening territory/cluster (often pharmacies)
   notes           String?
-  is_off_day      Boolean  @default(false)
+  is_off_day      Boolean  @default(false)  // deprecated — use day_type
+  day_type        DayType  @default(FIELD)
   // Expense tracking per day (mirrors the paper form)
   daily_allowance Float    @default(0)
   transport       Float    @default(0)
@@ -692,6 +696,27 @@ model TourPlanEntry {
   notes         String?
   slot          TourSlot      @default(MORNING)
   sort_order    Int           @default(0)
+}
+
+enum SaturdayPolicy {
+  OFF
+  HALF_DAY
+  FULL_DAY
+  MEETING
+}
+
+enum DayType {
+  FIELD
+  SUNDAY
+  PUBLIC_HOLIDAY
+  SATURDAY_HALF
+  SATURDAY_OFF
+  SATURDAY_MEETING
+  LEAVE_FULL
+  LEAVE_HALF_AM
+  LEAVE_HALF_PM
+  OFFICE_DAY
+  FIELD_CANCELLED
 }
 
 enum TourEntryType {

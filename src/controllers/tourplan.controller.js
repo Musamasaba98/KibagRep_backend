@@ -1,5 +1,6 @@
 import asyncHandler from "express-async-handler";
 import prisma from "../config/prisma.config.js";
+import { getUgandaPublicHolidays } from "../utils/holidays.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -14,6 +15,29 @@ const PLAN_INCLUDE = {
     },
   },
 };
+
+// ─── Helper: compute day_type for a calendar day given company Saturday policy ─
+function localISO(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function computeDayType(date, saturdayPolicy, holidaySet) {
+  const dow = date.getDay(); // 0=Sun, 6=Sat
+  const iso = localISO(date);
+
+  if (dow === 0) return "SUNDAY";
+  if (holidaySet.has(iso)) return "PUBLIC_HOLIDAY";
+  if (dow === 6) {
+    if (saturdayPolicy === "OFF")      return "SATURDAY_OFF";
+    if (saturdayPolicy === "HALF_DAY") return "SATURDAY_HALF";
+    if (saturdayPolicy === "MEETING")  return "SATURDAY_MEETING";
+    return "FIELD"; // FULL_DAY
+  }
+  return "FIELD";
+}
 
 // ─── GET /api/tour-plan/current ───────────────────────────────────────────────
 // Returns the current month's plan (auto-creates DRAFT if none), plus
@@ -30,8 +54,56 @@ export const getCurrentTourPlan = asyncHandler(async (req, res) => {
   });
 
   if (!plan) {
+    // Fetch company Saturday policy to auto-fill day types
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { company: { select: { saturday_default: true } } },
+    });
+    const satPolicy = user?.company?.saturday_default ?? "OFF";
+    const holidaySet = getUgandaPublicHolidays(year);
+
+    // Build all day records for the month with correct day_type
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const dayRows = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(year, month - 1, d);
+      dayRows.push({
+        day_number: d,
+        day_type: computeDayType(date, satPolicy, holidaySet),
+      });
+    }
+
     plan = await prisma.tourPlan.create({
-      data: { user_id: userId, month, year },
+      data: {
+        user_id: userId,
+        month,
+        year,
+        days: { createMany: { data: dayRows } },
+      },
+      include: PLAN_INCLUDE,
+    });
+  }
+
+  // Backfill days for plans that were created before auto-fill was introduced
+  if (plan.days.length === 0) {
+    const user2 = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { company: { select: { saturday_default: true } } },
+    });
+    const satPolicy2 = user2?.company?.saturday_default ?? "OFF";
+    const holidaySet2 = getUgandaPublicHolidays(year);
+    const daysInMonth2 = new Date(year, month, 0).getDate();
+    const backfillRows = [];
+    for (let d = 1; d <= daysInMonth2; d++) {
+      backfillRows.push({
+        plan_id: plan.id,
+        day_number: d,
+        day_type: computeDayType(new Date(year, month - 1, d), satPolicy2, holidaySet2),
+      });
+    }
+    await prisma.tourPlanDay.createMany({ data: backfillRows, skipDuplicates: true });
+    plan = await prisma.tourPlan.findUnique({
+      where: { user_id_month_year: { user_id: userId, month, year } },
       include: PLAN_INCLUDE,
     });
   }
@@ -53,10 +125,10 @@ export const getCurrentTourPlan = asyncHandler(async (req, res) => {
 });
 
 // ─── PUT /api/tour-plan/:id/day ───────────────────────────────────────────────
-// Upsert day-level metadata (area, off-day).
+// Upsert day-level metadata (area, day_type, expenses).
 export const updateTourPlanDay = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { day_number, morning_area, evening_area, notes, is_off_day,
+  const { day_number, morning_area, evening_area, notes, day_type,
           daily_allowance, transport, airtime, accommodation, other_costs } = req.body;
 
   if (!day_number || day_number < 1 || day_number > 31) {
@@ -71,18 +143,25 @@ export const updateTourPlanDay = asyncHandler(async (req, res) => {
     return res.status(403).json({ success: false, error: "Plan is locked after submission" });
   }
 
+  const isOffDay = day_type
+    ? !["FIELD", "OFFICE_DAY", "SATURDAY_HALF", "SATURDAY_MEETING"].includes(day_type)
+    : false;
+
   const day = await prisma.tourPlanDay.upsert({
     where: { plan_id_day_number: { plan_id: id, day_number } },
     create: {
       plan_id: id, day_number,
       morning_area: morning_area ?? null, evening_area: evening_area ?? null,
-      notes: notes ?? null, is_off_day: is_off_day ?? false,
+      notes: notes ?? null,
+      day_type: day_type ?? "FIELD",
+      is_off_day: isOffDay,
       daily_allowance: daily_allowance ?? 0, transport: transport ?? 0,
       airtime: airtime ?? 0, accommodation: accommodation ?? 0, other_costs: other_costs ?? 0,
     },
     update: {
       morning_area: morning_area ?? null, evening_area: evening_area ?? null,
-      notes: notes ?? null, is_off_day: is_off_day ?? false,
+      notes: notes ?? null,
+      ...(day_type !== undefined && { day_type, is_off_day: isOffDay }),
       daily_allowance: daily_allowance ?? 0, transport: transport ?? 0,
       airtime: airtime ?? 0, accommodation: accommodation ?? 0, other_costs: other_costs ?? 0,
     },
