@@ -61,15 +61,18 @@ export const getMyCompany = asyncHandler(async (req, res) => {
   res.json({ success: true, data: company });
 });
 
-// PUT /api/company/settings — update Saturday policy (SALES_ADMIN / Manager / COUNTRY_MGR)
+// PUT /api/company/settings — update company-level settings (SALES_ADMIN / Manager / COUNTRY_MGR)
 export const updateCompanySettings = asyncHandler(async (req, res) => {
   const companyId = req.user.company_id;
   if (!companyId) return res.status(403).json({ success: false, error: "No company linked to your account" });
-  const { saturday_default } = req.body;
+  const { saturday_default, country_code } = req.body;
+  const data = {};
+  if (saturday_default !== undefined) data.saturday_default = saturday_default;
+  if (country_code      !== undefined) data.country_code      = country_code;
   const updated = await prisma.company.update({
     where: { id: companyId },
-    data: { saturday_default },
-    select: { id: true, company_name: true, saturday_default: true },
+    data,
+    select: { id: true, company_name: true, saturday_default: true, country_code: true },
   });
   res.json({ success: true, data: updated });
 });

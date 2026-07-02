@@ -164,6 +164,9 @@ model Company {
 
   // Saturday policy — configurable by Sales Admin
   saturday_default     SaturdayPolicy         @default(OFF)
+
+  // Country code (ISO 3166-1 alpha-2) — scopes map search across the app
+  country_code         String                 @default("ug")
 }
 
 model Product {

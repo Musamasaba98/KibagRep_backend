@@ -90,7 +90,10 @@ export const UpdateTourPlanDaySchema = z.object({
 });
 
 export const CompanySettingsSchema = z.object({
-  saturday_default: z.enum(["OFF","HALF_DAY","FULL_DAY","MEETING"]),
+  saturday_default: z.enum(["OFF","HALF_DAY","FULL_DAY","MEETING"]).optional(),
+  country_code: z.string().min(2).max(3).toLowerCase().optional(),
+}).refine(d => d.saturday_default !== undefined || d.country_code !== undefined, {
+  message: "At least one setting must be provided",
 });
 
 // ─── Pharmacy Activity ────────────────────────────────────────────────────────
