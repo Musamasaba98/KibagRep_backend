@@ -65,11 +65,15 @@ export const CreateCompanySchema = z.object({
 
 // ─── Tour Plan ────────────────────────────────────────────────────────────────
 export const AddTourPlanEntrySchema = z.object({
-  entry_type:  z.enum(["DOCTOR", "PHARMACY", "FACILITY", "OTHER"]),
-  entity_id:   z.string().uuid().optional(),
-  entity_name: z.string().max(200).optional(),
-  notes:       z.string().max(500).optional(),
-  slot:        z.enum(["MORNING", "AFTERNOON", "EVENING"]).optional(),
+  day_number:    z.number().int().min(1).max(31),
+  entry_type:    z.enum(["CLINICIAN", "PHARMACY"]),
+  slot:          z.enum(["MORNING", "EVENING"]).optional(),
+  doctor_id:     z.string().uuid().optional(),
+  cycle_item_id: z.string().uuid().optional(),
+  pharmacy_id:   z.string().uuid().optional(),
+  pharmacy_name: z.string().max(200).optional(),
+  facility_id:   z.string().uuid().optional(),
+  notes:         z.string().max(500).optional(),
 });
 
 export const UpdateTourPlanDaySchema = z.object({
