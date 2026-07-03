@@ -114,7 +114,15 @@ export const getCurrentTourPlan = asyncHandler(async (req, res) => {
     include: {
       items: {
         include: {
-          doctor: { select: { id: true, doctor_name: true, town: true, cadre: true } },
+          doctor: {
+            select: {
+              id: true, doctor_name: true, town: true, cadre: true,
+              work_facilities: {
+                where: { is_primary: true },
+                select: { facility: { select: { id: true, name: true, town: true } } },
+              },
+            },
+          },
         },
         orderBy: { doctor: { doctor_name: "asc" } },
       },
