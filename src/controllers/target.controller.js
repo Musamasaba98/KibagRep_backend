@@ -212,3 +212,66 @@ export const setTarget = asyncHandler(async (req, res) => {
 
   res.json({ success: true, data: target });
 });
+
+// ─── Team Targets ─────────────────────────────────────────────────────────────
+
+// PUT /api/teams/:teamId/target?month=&year=
+export const setTeamTarget = asyncHandler(async (req, res) => {
+  const { teamId } = req.params;
+  const now   = new Date();
+  const month = parseInt(req.query.month) || now.getMonth() + 1;
+  const year  = parseInt(req.query.year)  || now.getFullYear();
+  const { target_value, target_units } = req.body;
+
+  const team = await prisma.team.findUnique({ where: { id: teamId }, select: { company_id: true } });
+  if (!team || team.company_id !== req.user.company_id) {
+    return res.status(404).json({ success: false, error: "Team not found" });
+  }
+
+  const record = await prisma.teamTarget.upsert({
+    where:  { team_id_month_year: { team_id: teamId, month, year } },
+    update: { target_value: Number(target_value) || 0, target_units: Number(target_units) || 0, set_by: req.user.id },
+    create: { team_id: teamId, month, year, target_value: Number(target_value) || 0, target_units: Number(target_units) || 0, set_by: req.user.id },
+  });
+
+  res.json({ success: true, data: record });
+});
+
+// GET /api/teams/:teamId/target-allocation?month=&year=
+export const getTeamTargetAllocation = asyncHandler(async (req, res) => {
+  const { teamId } = req.params;
+  const now   = new Date();
+  const month = parseInt(req.query.month) || now.getMonth() + 1;
+  const year  = parseInt(req.query.year)  || now.getFullYear();
+
+  const team = await prisma.team.findUnique({
+    where: { id: teamId },
+    include: {
+      targets: { where: { month, year } },
+      users:   { where: { role: "MedicalRep" }, select: { id: true, firstname: true, lastname: true } },
+    },
+  });
+  if (!team || team.company_id !== req.user.company_id) {
+    return res.status(404).json({ success: false, error: "Team not found" });
+  }
+
+  const teamTarget = team.targets[0] ?? null;
+
+  const repTargets = await prisma.salesTarget.findMany({
+    where: { user_id: { in: team.users.map(u => u.id) }, month, year },
+  });
+  const targetMap = Object.fromEntries(repTargets.map(t => [t.user_id, t]));
+
+  const reps = team.users.map(u => ({
+    user:   u,
+    target: targetMap[u.id] ?? null,
+  }));
+
+  const sumRepTargets = reps.reduce((s, r) => s + (r.target?.target_value ?? 0), 0);
+  const variance = (teamTarget?.target_value ?? 0) - sumRepTargets;
+
+  res.json({
+    success: true,
+    data: { month, year, team_target: teamTarget, reps, sum_rep_targets: sumRepTargets, variance },
+  });
+});

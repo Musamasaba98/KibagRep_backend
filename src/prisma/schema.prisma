@@ -65,6 +65,9 @@ model User {
   supervisor_approved_facility_staff FacilityStaff[]  @relation("FacilityStaffSupervisorApproved")
   admin_approved_facility_staff      FacilityStaff[]  @relation("FacilityStaffAdminApproved")
   created_campaigns  Campaign[]   @relation("CampaignCreator")
+  sales_plans        SalesPlan[]
+  performance_reviews_received PerformanceReview[] @relation("ReviewedUser")
+  performance_reviews_given    PerformanceReview[] @relation("Reviewer")
 }
 
 model SupervisorProfile {
@@ -194,6 +197,7 @@ model Product {
   literature               ProductLiterature[]
   field_events             FieldEvent[]
   stock_placement_targets  StockPlacementTarget[]
+  plan_lines               SalesPlanLine[]
 }
 
 model Doctor {
@@ -255,6 +259,7 @@ model Pharmacy {
   staff_links          PharmacyStaffLink[]
   territory_links      TerritoryPharmacy[]
   company_links        CompanyPharmacy[]
+  plan_lines           SalesPlanLine[]
 }
 
 model Team {
@@ -269,6 +274,7 @@ model Team {
   supervisor_id    String?
   territories      TerritoryTeam[]
   literature       ProductLiterature[]
+  targets          TeamTarget[]
   date_of_creation DateTime        @default(now())
   updatedAt        DateTime?       @updatedAt
 
@@ -495,6 +501,7 @@ model Facility {
   field_events         FieldEvent[]
   staff_links          FacilityStaffLink[]
   company_links        CompanyFacility[]
+  plan_lines           SalesPlanLine[]
 }
 
 model CallCycle {
@@ -1604,4 +1611,86 @@ model Campaign {
   creator     User      @relation("CampaignCreator", fields: [created_by], references: [id])
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
+}
+
+// ─── Targets & Performance ─────────────────────────────────────────────────────
+
+model TeamTarget {
+  id           String   @id @default(uuid())
+  team         Team     @relation(fields: [team_id], references: [id])
+  team_id      String
+  month        Int
+  year         Int
+  target_value Int      @default(0)
+  target_units Int      @default(0)
+  set_by       String?
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  @@unique([team_id, month, year])
+}
+
+enum SalesPlanStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+}
+
+model SalesPlan {
+  id           String          @id @default(uuid())
+  user         User            @relation(fields: [user_id], references: [id])
+  user_id      String
+  month        Int
+  year         Int
+  status       SalesPlanStatus @default(DRAFT)
+  submitted_at DateTime?
+  approved_by  String?
+  approved_at  DateTime?
+  lines        SalesPlanLine[]
+  created_at   DateTime        @default(now())
+  updated_at   DateTime        @updatedAt
+
+  @@unique([user_id, month, year])
+}
+
+model SalesPlanLine {
+  id           String    @id @default(uuid())
+  plan         SalesPlan @relation(fields: [plan_id], references: [id], onDelete: Cascade)
+  plan_id      String
+  product      Product   @relation(fields: [product_id], references: [id])
+  product_id   String
+  pharmacy     Pharmacy? @relation(fields: [pharmacy_id], references: [id])
+  pharmacy_id  String?
+  facility     Facility? @relation(fields: [facility_id], references: [id])
+  facility_id  String?
+  target_units Int       @default(0)
+  target_value Int       @default(0)
+
+  @@unique([plan_id, product_id, pharmacy_id, facility_id])
+  @@index([product_id])
+  @@index([pharmacy_id])
+  @@index([facility_id])
+}
+
+enum ReviewOutcome {
+  REVIEWED
+  ACTION_PLAN
+  ESCALATED
+}
+
+model PerformanceReview {
+  id              String        @id @default(uuid())
+  user            User          @relation("ReviewedUser", fields: [user_id], references: [id])
+  user_id         String
+  reviewer        User          @relation("Reviewer", fields: [reviewer_id], references: [id])
+  reviewer_id     String
+  month           Int
+  year            Int
+  achievement_pct Float
+  reason          String
+  action          String?
+  outcome         ReviewOutcome @default(REVIEWED)
+  created_at      DateTime      @default(now())
+
+  @@unique([user_id, month, year])
 }

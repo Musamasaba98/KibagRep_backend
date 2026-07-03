@@ -5,6 +5,7 @@ import {
   getCompanyTeams, createCompanyTeam, renameCompanyTeam, deleteCompanyTeam,
   addTeamProduct, removeTeamProduct,
 } from "../controllers/team.controller.js";
+import { setTeamTarget, getTeamTargetAllocation } from "../controllers/target.controller.js";
 
 const router = express.Router();
 
@@ -18,6 +19,10 @@ router.put("/company/:id",                   protect, requireRole(...MANAGE_ROLE
 router.delete("/company/:id",                protect, requireRole(...MANAGE_ROLES), deleteCompanyTeam);
 router.post("/company/:id/products",         protect, requireRole(...MANAGE_ROLES), addTeamProduct);
 router.delete("/company/:id/products/:productId", protect, requireRole(...MANAGE_ROLES), removeTeamProduct);
+
+// Team targets
+router.put("/:teamId/target",             protect, requireRole("Manager","COUNTRY_MGR","SALES_ADMIN","SUPER_ADMIN"), setTeamTarget);
+router.get("/:teamId/target-allocation",  protect, requireRole("Manager","COUNTRY_MGR","SALES_ADMIN","SUPER_ADMIN","Supervisor"), getTeamTargetAllocation);
 
 // Raw CRUD (SUPER_ADMIN only)
 router.get("/", protect, requireRole("SUPER_ADMIN"), getAllTeam);
