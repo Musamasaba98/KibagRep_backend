@@ -65,7 +65,6 @@ export const upsertLines = asyncHandler(async (req, res) => {
   const priceMap = Object.fromEntries(products.map(p => [p.id, p.unit_price]));
 
   const lineData = lines.map(l => ({
-    plan_id:      planId,
     product_id:   l.product_id,
     pharmacy_id:  l.pharmacy_id  ?? null,
     facility_id:  l.facility_id  ?? null,
