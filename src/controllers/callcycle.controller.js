@@ -119,12 +119,13 @@ export const addCycleItem = asyncHandler(async (req, res) => {
   if (!listTypeOverride && companyId) {
     const doctor = await prisma.doctor.findUnique({
       where: { id: doctor_id },
-      select: { facility_id: true },
+      select: { work_facilities: { where: { is_primary: true }, select: { facility_id: true }, take: 1 } },
     });
-    if (doctor?.facility_id) {
+    const primaryFacilityId = doctor?.work_facilities?.[0]?.facility_id;
+    if (primaryFacilityId) {
       const link = await prisma.territoryFacility.findFirst({
         where: {
-          facility_id: doctor.facility_id,
+          facility_id: primaryFacilityId,
           territory: { company_id: companyId },
         },
         select: { territory: { select: { territory_type: true } } },
