@@ -16,10 +16,11 @@ async function getActuals(userId, month, year) {
   const startDate = new Date(year, month - 1, 1);
   const endDate   = new Date(year, month,     1);
 
+  // Achievement = APPROVED orders (supervisor has signed off; physical delivery may lag)
   const deliveredOrders = await prisma.procurementOrder.findMany({
     where: {
       user_id:    userId,
-      status:     "DELIVERED",
+      status:     { in: ["APPROVED", "DELIVERED"] },
       order_date: { gte: startDate, lt: endDate },
     },
     include: {
@@ -29,10 +30,11 @@ async function getActuals(userId, month, year) {
     },
   });
 
+  // Booked = orders in the pipeline (placed but not yet approved)
   const bookedOrders = await prisma.procurementOrder.findMany({
     where: {
       user_id:    userId,
-      status:     { not: "CANCELLED" },
+      status:     { in: ["PROPOSED", "SUBMITTED"] },
       order_date: { gte: startDate, lt: endDate },
     },
     include: {

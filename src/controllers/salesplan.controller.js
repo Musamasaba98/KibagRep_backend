@@ -182,7 +182,7 @@ export const getPlanAchievement = asyncHandler(async (req, res) => {
   const orders = await prisma.procurementOrder.findMany({
     where: {
       user_id: userId,
-      status:  "DELIVERED",
+      status:  { in: ["APPROVED", "DELIVERED"] },
       order_date: { gte: start, lte: end },
     },
     include: {
@@ -191,7 +191,7 @@ export const getPlanAchievement = asyncHandler(async (req, res) => {
   });
 
   // Key: "productId|outletId" → achieved units
-  const ach: Record<string, number> = {};
+  const ach = {};
   for (const order of orders) {
     const outletId = order.pharmacy_id ?? order.facility_id ?? "__none__";
     for (const item of order.items) {
