@@ -165,6 +165,44 @@ export const revertPlan = asyncHandler(async (req, res) => {
   res.json({ success: true, data: updated });
 });
 
+// ─── GET /api/sales-plans/:planId/achievement ────────────────────────────────
+// Returns achieved units by product+outlet for the plan's month/year (from DELIVERED orders)
+export const getPlanAchievement = asyncHandler(async (req, res) => {
+  const { planId } = req.params;
+  const userId = req.user.id;
+
+  const plan = await prisma.salesPlan.findUnique({ where: { id: planId } });
+  if (!plan || plan.user_id !== userId) {
+    return res.status(404).json({ success: false, error: "Plan not found" });
+  }
+
+  const start = new Date(plan.year, plan.month - 1, 1);
+  const end   = new Date(plan.year, plan.month, 0, 23, 59, 59, 999);
+
+  const orders = await prisma.procurementOrder.findMany({
+    where: {
+      user_id: userId,
+      status:  "DELIVERED",
+      order_date: { gte: start, lte: end },
+    },
+    include: {
+      items: { select: { product_id: true, quantity: true } },
+    },
+  });
+
+  // Key: "productId|outletId" → achieved units
+  const ach: Record<string, number> = {};
+  for (const order of orders) {
+    const outletId = order.pharmacy_id ?? order.facility_id ?? "__none__";
+    for (const item of order.items) {
+      const key = `${item.product_id}|${outletId}`;
+      ach[key] = (ach[key] ?? 0) + item.quantity;
+    }
+  }
+
+  res.json({ success: true, data: ach });
+});
+
 // ─── GET /api/sales-plans?team_id=&month=&year=&status= ──────────────────────
 export const listPlans = asyncHandler(async (req, res) => {
   const { company_id } = req.user;
