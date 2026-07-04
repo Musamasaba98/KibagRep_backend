@@ -167,7 +167,7 @@ export const getInbox = asyncHandler(async (req, res) => {
   let userFilter = { company_id };
   if (role === "Supervisor") {
     const myTeams = await prisma.team.findMany({
-      where: { users: { some: { id: supervisorId } } },
+      where: { supervisor_id: supervisorId },
       select: { id: true },
     });
     if (myTeams.length > 0) {
