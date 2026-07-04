@@ -388,7 +388,7 @@ model ProcurementContact {
 }
 
 // An order placed or proposed by a rep at a pharmacy or hospital/facility.
-// Status lifecycle: PROPOSED → SUBMITTED → APPROVED → DELIVERED | CANCELLED
+// Status lifecycle: PROPOSED → SUBMITTED → APPROVED → DELIVERED | CANCELLED | REJECTED
 model ProcurementOrder {
   id                String             @id @default(uuid())
   user              User               @relation(fields: [user_id], references: [id])
@@ -402,6 +402,7 @@ model ProcurementOrder {
   order_date        DateTime           @default(now())
   expected_delivery DateTime?
   status            OrderStatus        @default(PROPOSED)
+  rejection_reason  String?
   total_value       Float              @default(0)
   notes             String?
   items             ProcurementItem[]
@@ -452,6 +453,7 @@ enum OrderStatus {
   APPROVED
   DELIVERED
   CANCELLED
+  REJECTED
 }
 
 model DailyPlan {
@@ -1642,11 +1644,14 @@ model SalesPlan {
   user_id      String
   month        Int
   year         Int
-  status       SalesPlanStatus @default(DRAFT)
-  submitted_at DateTime?
-  approved_by  String?
-  approved_at  DateTime?
-  lines        SalesPlanLine[]
+  status                SalesPlanStatus @default(DRAFT)
+  submitted_at          DateTime?
+  submitted_coverage_pct Float?
+  approved_by           String?
+  approved_at           DateTime?
+  reverted_by           String?
+  reverted_at           DateTime?
+  lines                 SalesPlanLine[]
   created_at   DateTime        @default(now())
   updated_at   DateTime        @updatedAt
 

@@ -325,6 +325,11 @@ export const createReview = asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, data: review });
 });
 
+// ─── GET /api/performance/config ─────────────────────────────────────────────
+export const getConfig = asyncHandler(async (req, res) => {
+  res.json({ success: true, data: { rag_green: RAG_GREEN, rag_amber: RAG_AMBER } });
+});
+
 // ─── GET /api/performance/reviews?team_id=&month=&year= ──────────────────────
 export const listReviews = asyncHandler(async (req, res) => {
   const { company_id } = req.user;

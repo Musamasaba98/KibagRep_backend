@@ -111,7 +111,11 @@ export const submitPlan = asyncHandler(async (req, res) => {
 
   const updated = await prisma.salesPlan.update({
     where:   { id: planId },
-    data:    { status: "SUBMITTED", submitted_at: new Date() },
+    data:    {
+      status: "SUBMITTED",
+      submitted_at: new Date(),
+      submitted_coverage_pct: coverage != null ? Math.round(coverage * 100) : null,
+    },
     include: PLAN_INCLUDE,
   });
 
@@ -158,7 +162,14 @@ export const revertPlan = asyncHandler(async (req, res) => {
 
   const updated = await prisma.salesPlan.update({
     where:   { id: planId },
-    data:    { status: "DRAFT", submitted_at: null, approved_by: null, approved_at: null },
+    data:    {
+      status: "DRAFT",
+      submitted_at: null,
+      approved_by: null,
+      approved_at: null,
+      reverted_by: req.user.id,
+      reverted_at: new Date(),
+    },
     include: PLAN_INCLUDE,
   });
 

@@ -42,6 +42,7 @@ import hcpRecordRouter      from "./src/routes/hcprecord.route.js";
 import planRouter           from "./src/routes/plan.route.js";
 import salesPlanRouter      from "./src/routes/salesplan.route.js";
 import performanceRouter    from "./src/routes/performance.route.js";
+import procurementRouter    from "./src/routes/procurement.route.js";
 import { notFound, errorHandler } from "./src/middleware/error.middleware.js";
 
 const app = express();
@@ -153,6 +154,7 @@ app.use("/api/hcp-records",     hcpRecordRouter);
 app.use("/api/plan",            planRouter);
 app.use("/api/sales-plans",     salesPlanRouter);
 app.use("/api/performance",     performanceRouter);
+app.use("/api/orders",          procurementRouter);
 
 // Legacy report generator
 app.use("/api/report", reportRouter);
