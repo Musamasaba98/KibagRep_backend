@@ -30,7 +30,8 @@ export const createOrder = asyncHandler(async (req, res) => {
 
   let total_value = 0;
   const itemData = items.map(i => {
-    const up = i.unit_price ?? priceMap[i.product_id] ?? 0;
+    // Use client price only if explicitly non-zero (rep negotiated price); fall back to DB price
+    const up = (i.unit_price && i.unit_price > 0) ? i.unit_price : (priceMap[i.product_id] ?? 0);
     total_value += (i.quantity ?? 0) * up;
     return {
       product_id: i.product_id,
@@ -103,7 +104,7 @@ export const updateOrder = asyncHandler(async (req, res) => {
 
   let total_value = 0;
   const itemData = (items ?? []).map(i => {
-    const up = i.unit_price ?? priceMap[i.product_id] ?? 0;
+    const up = (i.unit_price && i.unit_price > 0) ? i.unit_price : (priceMap[i.product_id] ?? 0);
     total_value += (i.quantity ?? 0) * up;
     return { product_id: i.product_id, quantity: Number(i.quantity) || 0, unit_price: up, notes: i.notes ?? null };
   });

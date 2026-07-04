@@ -42,7 +42,7 @@ export const getCompanyProducts = asyncHandler(async (req, res) => {
   if (!companyId) return res.status(400).json({ success: false, error: 'Not linked to a company' });
   const products = await prisma.product.findMany({
     where: { company_id: companyId },
-    select: { id: true, product_name: true, classification: true, generic_name: true },
+    select: { id: true, product_name: true, unit_price: true, classification: true, generic_name: true },
     orderBy: { product_name: 'asc' },
   });
   res.json({ success: true, data: products });
