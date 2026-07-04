@@ -15,7 +15,7 @@ const ORDER_INCLUDE = {
 // ─── POST /api/orders — rep creates a PROPOSED order ─────────────────────────
 export const createOrder = asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { pharmacy_id, facility_id, items, notes, expected_delivery } = req.body;
+  const { pharmacy_id, facility_id, outlet_type, items, notes, expected_delivery } = req.body;
 
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ success: false, error: "Order must have at least one item" });
@@ -46,6 +46,7 @@ export const createOrder = asyncHandler(async (req, res) => {
       user_id:           userId,
       pharmacy_id:       pharmacy_id ?? null,
       facility_id:       facility_id ?? null,
+      outlet_type:       outlet_type ?? null,
       notes:             notes ?? null,
       expected_delivery: expected_delivery ? new Date(expected_delivery) : null,
       total_value,
@@ -85,7 +86,7 @@ export const listMyOrders = asyncHandler(async (req, res) => {
 export const updateOrder = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
-  const { pharmacy_id, facility_id, items, notes } = req.body;
+  const { pharmacy_id, facility_id, outlet_type, items, notes } = req.body;
 
   const order = await prisma.procurementOrder.findUnique({ where: { id } });
   if (!order || order.user_id !== userId) {
@@ -116,6 +117,7 @@ export const updateOrder = asyncHandler(async (req, res) => {
       data: {
         pharmacy_id:      pharmacy_id ?? null,
         facility_id:      facility_id ?? null,
+        outlet_type:      outlet_type ?? null,
         notes:            notes ?? null,
         status:           "PROPOSED",
         total_value,

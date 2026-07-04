@@ -6,6 +6,7 @@ import {
   getNationalOverview, getTerritoryCoverage, getTierCoverage,
   exportReport,
 } from '../controllers/report.controller.js';
+import { businessPlanReport } from '../controllers/businessPlanReport.controller.js';
 
 const router = express.Router();
 
@@ -24,6 +25,9 @@ router.get('/territory-coverage',  requireRole(countryRoles), getTerritoryCovera
 router.get('/tier-coverage',       requireRole(countryRoles), getTierCoverage);
 
 router.get('/export', requireRole(["SALES_ADMIN", "COUNTRY_MGR", "SUPER_ADMIN"]), exportReport);
+
+const supervisorPlus = ["Supervisor", "Manager", "COUNTRY_MGR", "SALES_ADMIN", "SUPER_ADMIN"];
+router.get('/business-plan', requireRole(supervisorPlus), businessPlanReport);
 
 router.get(
   '/generate-report',

@@ -403,6 +403,7 @@ model ProcurementOrder {
   expected_delivery DateTime?
   status            OrderStatus        @default(PROPOSED)
   rejection_reason  String?
+  outlet_type       OutletType?
   total_value       Float              @default(0)
   notes             String?
   items             ProcurementItem[]
@@ -454,6 +455,13 @@ enum OrderStatus {
   DELIVERED
   CANCELLED
   REJECTED
+}
+
+enum OutletType {
+  HOSPITAL
+  CLINIC
+  RETAIL_PHARMACY
+  WHOLESALE
 }
 
 model DailyPlan {
@@ -1668,6 +1676,7 @@ model SalesPlanLine {
   pharmacy_id  String?
   facility     Facility? @relation(fields: [facility_id], references: [id])
   facility_id  String?
+  outlet_type  OutletType?
   target_units Int       @default(0)
   target_value Int       @default(0)
 

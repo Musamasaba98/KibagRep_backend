@@ -68,6 +68,7 @@ export const upsertLines = asyncHandler(async (req, res) => {
     product_id:   l.product_id,
     pharmacy_id:  l.pharmacy_id  ?? null,
     facility_id:  l.facility_id  ?? null,
+    outlet_type:  l.outlet_type  ?? null,
     target_units: Number(l.target_units) || 0,
     target_value: l.target_value != null
       ? Number(l.target_value)
